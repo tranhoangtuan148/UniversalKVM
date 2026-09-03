@@ -103,6 +103,18 @@ effect does not work reliably; the existing code wraps it in
 **Do not touch the monitor geometry maths** in `mouses.rs` and `MonitorsViewer.tsx`
 unless that is the task. Borders, portals, and overlap detection are interdependent.
 
+**An idle device answers with an empty list, not an error.** `get_recent_events` returns
+`Ok(vec![])` when nothing happened on Windows and macOS; only Linux returns an error. The
+fetch loop runs every millisecond, so anything in it that reads a successful poll as an
+event runs a thousand times a second. That is what made the app freeze on Windows and
+macOS while Linux looked fine.
+
+**Nothing in the fetch loop may reach the Tauri main thread.** `app_handle.cursor_position()`
+and `set_cursor_position` post a message to the event loop and block for the answer, so
+calling them at loop rate floods the thread that draws the window. The border check runs
+on its own thread for that reason, and `IS_CHECKING_BORDER` keeps one check in flight at a
+time.
+
 **`xavkeyboardandmousegrabber` is an external crate** from crates.io that provides the
 low level device access. Its name is not ours to change.
 

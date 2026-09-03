@@ -176,6 +176,15 @@ pub fn fetch_keyboard_events(app_handle: &AppHandle) {
         if !keyboard_info.keyboard.is_real_device() {
             continue; // No events to fetch for a virtual only keyboard
         }
+        /*
+          A keyboard that replays a peer's events is not a keyboard of this machine. It
+          carries the peer's device path, which on Windows is enough for is_real_device to
+          call it real, and grabbing on Windows blocks every keyboard of the machine, so
+          capturing it would block the keyboard the user actually types on.
+        */
+        if keyboard_info.virtual_keyboard.is_some() {
+            continue;
+        }
         if !keyboard_info.active {
             if keyboard_info.keyboard.is_grabbed() {
                 let _ = keyboard_info.keyboard.ungrab();

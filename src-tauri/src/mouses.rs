@@ -176,6 +176,15 @@ pub fn fetch_mouse_events(app_handle: &AppHandle) {
         if !mouse_info.mouse.is_real_device() {
             continue; // No events to fetch for a virtual only mouse
         }
+        /*
+          A mouse that replays a peer's events is not a mouse of this machine. It carries
+          the peer's device path, which on Windows is enough for is_real_device to call it
+          real, and grabbing on Windows blocks every mouse of the machine, so capturing it
+          would block the mice the user actually holds.
+        */
+        if mouse_info.virtual_mouse.is_some() {
+            continue;
+        }
         if !mouse_info.active {
             if mouse_info.mouse.is_grabbed() {
                 let _ = mouse_info.mouse.ungrab();
@@ -194,7 +203,14 @@ pub fn fetch_mouse_events(app_handle: &AppHandle) {
 
         match mouse_info.mouse.get_recent_events() {
             Ok(events) => {
-                has_received_an_event = true;
+                /*
+                  Only a real event counts. On Windows and macOS an idle device answers with
+                  an empty list rather than an error, and taking that for an event had this
+                  loop ask for a border check every millisecond, forever.
+                */
+                if !events.is_empty() {
+                    has_received_an_event = true;
+                }
 
                 // Nothing to do if focus is already on the current app
                 if focused_peer_id.is_empty() {
@@ -406,43 +422,68 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
     Ok(())
 }
 
+/*
+  One border check at a time. The check runs on a thread of its own, because reading the
+  cursor position can block, and mouse events are fetched every millisecond: without this
+  gate, a mouse in motion spawns a thread per fetch, which starves the very UI thread the
+  cursor position is read from. Skipping a check costs nothing, the next fetch starts one.
+*/
+static IS_CHECKING_BORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Releases the gate whatever happens to the check, so a failed one cannot end crossings.
+struct BorderCheckGate;
+impl Drop for BorderCheckGate {
+    fn drop(&mut self) {
+        IS_CHECKING_BORDER.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub fn send_focus_if_cursor_is_on_valid_border() {
+    if IS_CHECKING_BORDER.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return; // Early return, a check is already reading the cursor position
+    }
+
     let app_handle = get_handle();
 
     // Using a thread because get_cursor_position and repulse_cursor_from_border can block when the UI is frozen
     std::thread::spawn(move || {
-        {
-            let cursor = get_cursor_position(&app_handle);
-            let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
-            let mut state = match state.lock() {
-                Ok(state) => state,
-                Err(err) => { log_lock_error_void(format!("Lock error when send_focus_if_cursor_is_on_valid_border: {err}"), &app_handle); return; }, // Early return
-            };
-            let self_monitors = &state.network_info.self_info.set_of_monitors.monitors;
-
-            if let Some(cursor) = cursor {
-                let on_global_border = is_cursor_on_global_border(
-                    cursor.clone(),
-                    self_monitors,
-                    &state.network_info.self_info.id,
-                    &state.network_info.borders
-                );
-
-                if let Some(border_portal) = on_global_border {
-                    let focused_id = border_portal.linked_app_id.clone();
-
-                    // Only send focus if connected with the other app
-                    if let Some(app) = state.network_info.discovered_apps.get(&focused_id)
-                        && app.info.authorized_by_self && app.info.authorized_by_peer {
-                        send_focus_with_border(focused_id, Some(border_portal.clone()), &mut state.network_info, &app_handle);
-                        drop(state); // Drop state, because repulse_cursor_from_border can block
-                        repulse_cursor_from_border(cursor, border_portal, &app_handle);
-                    }
-                }
-            }
-        }
+        let _gate = BorderCheckGate;
+        send_focus_if_cursor_is_on_valid_border_blocking(&app_handle);
         return_back_handle(app_handle);
     });
+}
+
+/// Blocks on the cursor position, so it belongs on the thread that
+/// `send_focus_if_cursor_is_on_valid_border` spawns, never on a fetch loop.
+fn send_focus_if_cursor_is_on_valid_border_blocking(app_handle: &AppHandle) {
+    let cursor = get_cursor_position(app_handle);
+    let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
+    let mut state = match state.lock() {
+        Ok(state) => state,
+        Err(err) => { log_lock_error_void(format!("Lock error when send_focus_if_cursor_is_on_valid_border: {err}"), app_handle); return; }, // Early return
+    };
+    let self_monitors = &state.network_info.self_info.set_of_monitors.monitors;
+
+    if let Some(cursor) = cursor {
+        let on_global_border = is_cursor_on_global_border(
+            cursor.clone(),
+            self_monitors,
+            &state.network_info.self_info.id,
+            &state.network_info.borders
+        );
+
+        if let Some(border_portal) = on_global_border {
+            let focused_id = border_portal.linked_app_id.clone();
+
+            // Only send focus if connected with the other app
+            if let Some(app) = state.network_info.discovered_apps.get(&focused_id)
+                && app.info.authorized_by_self && app.info.authorized_by_peer {
+                send_focus_with_border(focused_id, Some(border_portal.clone()), &mut state.network_info, app_handle);
+                drop(state); // Drop state, because repulse_cursor_from_border can block
+                repulse_cursor_from_border(cursor, border_portal, app_handle);
+            }
+        }
+    }
 }
 
 /// Get x and y position in pixels, on the global area (all monitors combined).
