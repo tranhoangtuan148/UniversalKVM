@@ -5,6 +5,28 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::networking::{submit_broadcast_network_request};
 use crate::states::{ActiveKeyboardBackendResponse, ActiveMouseBackendResponse, AppResponse, BackendGlobalState, BordersResponse, HardDiskStorage, LogLevel, LogResponse, NetworkAction, NetworkApplicationBroadcastRequest};
 
+/*
+  Ask Windows for a 1 ms timer.
+
+  The input loop sleeps 1 ms between passes, but Windows hands out a ~15.6 ms timer by
+  default: measured on Windows 11, that sleep really took 15.6 ms, so mouse movement left
+  this machine in 15.6 ms lumps at 64 Hz and the cursor stuttered on the machine being
+  driven. With the request, the same sleep takes about 2.6 ms.
+
+  The cost is a higher timer interrupt rate, and therefore a little more power, for as long
+  as the app runs. That is the trade a program whose whole job is forwarding input should
+  make. Windows drops the request when the process exits.
+*/
+pub fn ask_for_a_high_resolution_timer() {
+    #[cfg(target_os = "windows")] {
+        const TIMERR_NOERROR: u32 = 0;
+        let result = unsafe { windows::Win32::Media::timeBeginPeriod(1) };
+        if result != TIMERR_NOERROR {
+            log::warn!("Windows refused a 1 ms timer ({result}). Forwarded input will be coarser.");
+        }
+    }
+}
+
 pub fn backend_add_log(log: String, level: LogLevel, app_handle: &AppHandle) {
     log::debug!("backend: backend_add_log");
     match app_handle.emit(

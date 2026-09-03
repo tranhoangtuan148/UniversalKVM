@@ -34,7 +34,7 @@ arboard = { version="3.6.1", features= ["wayland-data-control"] }
 
 # Reading the name Windows knows a keyboard or a mouse by, see device_names.rs
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_HumanInterfaceDevice", "Win32_Devices_Properties", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem"] }
+windows = { version = "0.62", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_HumanInterfaceDevice", "Win32_Devices_Properties", "Win32_Foundation", "Win32_Media", "Win32_Security", "Win32_Storage_FileSystem"] }
 
 # Using jemalloc to improve RAM memory footprint
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

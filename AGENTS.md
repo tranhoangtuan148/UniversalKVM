@@ -109,6 +109,12 @@ fetch loop runs every millisecond, so anything in it that reads a successful pol
 event runs a thousand times a second. That is what made the app freeze on Windows and
 macOS while Linux looked fine.
 
+**The fetch loop is only as fast as the platform timer.** Its `sleep(1 ms)` really takes
+about 15.6 ms on Windows, because that is the timer the OS hands out by default, which put
+forwarded mouse movement at 64 Hz and made the cursor stutter on the machine being driven.
+`ask_for_a_high_resolution_timer` in `common.rs` asks for 1 ms at startup and brings the
+sleep to about 2.6 ms. Measure before assuming a sleep in this loop does what it says.
+
 **Nothing in the fetch loop may reach the Tauri main thread.** `app_handle.cursor_position()`
 and `set_cursor_position` post a message to the event loop and block for the answer, so
 calling them at loop rate floods the thread that draws the window. The border check runs

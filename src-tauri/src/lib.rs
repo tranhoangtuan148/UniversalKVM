@@ -1,7 +1,7 @@
 pub mod clipboard;
 use clipboard::initialize_clipboard;
 pub mod common;
-use common::{backend_add_log, TimeMonitor, log_lock_error_void, to_frontend_update_keyboard_devices, to_frontend_update_mouse_devices, to_frontend_update_self_app, to_frontend_update_discovered_apps, to_frontend_auto_update_discovered_apps};
+use common::{ask_for_a_high_resolution_timer, backend_add_log, TimeMonitor, log_lock_error_void, to_frontend_update_keyboard_devices, to_frontend_update_mouse_devices, to_frontend_update_self_app, to_frontend_update_discovered_apps, to_frontend_auto_update_discovered_apps};
 pub mod device_names;
 pub mod focus;
 use focus::{broadcast_set_of_monitors, send_focus_with_position};
@@ -600,6 +600,9 @@ pub fn return_back_handle(app_handle: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything schedules a timer, see ask_for_a_high_resolution_timer
+    ask_for_a_high_resolution_timer();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new()
             .level(log::LevelFilter::Info) // Debug has a large performance penalty
