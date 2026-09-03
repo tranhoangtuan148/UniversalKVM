@@ -132,12 +132,12 @@ Every asset is named `UniversalKVM-<version>-<platform>.<ext>`:
 
 | Platform | File |
 | --- | --- |
-| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.1-macOS-AppleSilicon.dmg` |
-| macOS, Intel | `UniversalKVM-1.0.1-macOS-Intel.dmg` |
-| Debian, Ubuntu, Mint | `UniversalKVM-1.0.1-Linux-x86_64.deb` |
-| Fedora, RHEL | `UniversalKVM-1.0.1-Linux-x86_64.rpm` |
-| Any Linux, portable | `UniversalKVM-1.0.1-Linux-x86_64.AppImage` |
-| Windows | `UniversalKVM-1.0.1-Windows-x64.msi` |
+| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.2-macOS-AppleSilicon.dmg` |
+| macOS, Intel | `UniversalKVM-1.0.2-macOS-Intel.dmg` |
+| Debian, Ubuntu, Mint | `UniversalKVM-1.0.2-Linux-x86_64.deb` |
+| Fedora, RHEL | `UniversalKVM-1.0.2-Linux-x86_64.rpm` |
+| Any Linux, portable | `UniversalKVM-1.0.2-Linux-x86_64.AppImage` |
+| Windows | `UniversalKVM-1.0.2-Windows-x64.msi` |
 
 Substitute the version you are installing. On macOS, `uname -m` prints `arm64` for
 Apple silicon and `x86_64` for Intel.
@@ -167,10 +167,10 @@ sudo gpasswd -d $USER input
 
 Then install the package for your distribution:
 
-* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.1-Linux-x86_64.deb` and install it.
+* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.2-Linux-x86_64.deb` and install it.
 * Fedora and other Red Hat based distributions: download
-  `UniversalKVM-1.0.1-Linux-x86_64.rpm` and install it.
-* Any distribution: download `UniversalKVM-1.0.1-Linux-x86_64.AppImage`, make it
+  `UniversalKVM-1.0.2-Linux-x86_64.rpm` and install it.
+* Any distribution: download `UniversalKVM-1.0.2-Linux-x86_64.AppImage`, make it
   executable with `chmod +x`, and run it. No installation needed.
 
 Granting the `input` group to one executable and user is more secure than adding the
@@ -205,12 +205,30 @@ group to your user globally.
 
 ### Windows
 
-1. Download `UniversalKVM-1.0.1-Windows-x64.msi` and install it.
+1. Download `UniversalKVM-1.0.2-Windows-x64.msi` and install it.
 
    The installer is unsigned, so SmartScreen shows *"Windows protected your PC"*.
    Choose **More info** → **Run anyway** to continue.
 
-2. Optional, for login screens and admin prompts: download
+2. If **Smart App Control** is on, it blocks the app outright: *"Smart App Control
+   blocked an app that may be unsafe ... we could not verify its publisher"*. This is a
+   separate check from SmartScreen, it applies to any executable it cannot verify, and
+   it has **no per-app exception** — the dialog offers no *Run anyway*.
+
+   The verdict is made per file, so one build can run while the next is blocked even
+   though nothing about the app changed. Two ways past it:
+
+   * Turn Smart App Control off: **Windows Security** → **App & browser control** →
+     **Smart App Control** → **Off**. Read this first: turning it off is one way, and
+     turning it back on requires reinstalling Windows. Defender and SmartScreen keep
+     working either way.
+   * Or run a build signed with a certificate Smart App Control trusts. These releases
+     are not signed, so that means building and signing it yourself for now.
+
+   Smart App Control only ships enabled on a clean install of Windows 11, so most
+   machines never see this.
+
+3. Optional, for login screens and admin prompts: download
    [PsExec](https://learn.microsoft.com/sysinternals/downloads/psexec) and make a
    shortcut that launches UniversalKVM through it, with the target set to:
 
