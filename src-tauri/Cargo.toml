@@ -1,6 +1,6 @@
 [package]
 name = "universalkvm"
-version = "1.0.2"
+version = "1.0.3"
 description = "UniversalKVM, a software KVM that shares one keyboard and mouse across multiple computers."
 edition = "2024"
 

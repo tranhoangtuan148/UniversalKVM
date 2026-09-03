@@ -118,8 +118,11 @@ sleep to about 2.6 ms. Measure before assuming a sleep in this loop does what it
 **Nothing in the fetch loop may reach the Tauri main thread.** `app_handle.cursor_position()`
 and `set_cursor_position` post a message to the event loop and block for the answer, so
 calling them at loop rate floods the thread that draws the window. The border check runs
-on its own thread for that reason, and `IS_CHECKING_BORDER` keeps one check in flight at a
-time.
+on its own thread for that reason, `IS_CHECKING_BORDER` keeps one check in flight at a time,
+and `BORDER_CHECK_INTERVAL_MS` keeps it from running more often than every 10 ms. Both
+bounds are needed: the machine being driven asks for a check once per batch of events it
+receives, so without the interval the check runs as fast as it can finish and the movement
+it is applying waits behind it for the same global state.
 
 **`xavkeyboardandmousegrabber` is an external crate** from crates.io that provides the
 low level device access. Its name is not ours to change.

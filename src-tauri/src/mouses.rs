@@ -423,12 +423,19 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
 }
 
 /*
-  One border check at a time. The check runs on a thread of its own, because reading the
-  cursor position can block, and mouse events are fetched every millisecond: without this
-  gate, a mouse in motion spawns a thread per fetch, which starves the very UI thread the
-  cursor position is read from. Skipping a check costs nothing, the next fetch starts one.
+  The border check is expensive and it is asked for constantly: once per pass of the fetch
+  loop while a mouse moves, and once per batch of events received from a peer. Reading the
+  cursor position goes to the Tauri event loop and waits for the answer, and the check holds
+  the global state while it works, so running it at loop rate makes the machine being driven
+  apply the movement it receives in fits.
+
+  So the check is bounded twice: one at a time, and not more often than every few
+  milliseconds. A crossing is not missed by waiting: the cursor stays on the border until
+  the check pushes it away.
 */
 static IS_CHECKING_BORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAST_BORDER_CHECK_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+const BORDER_CHECK_INTERVAL_MS: u64 = 10;
 
 /// Releases the gate whatever happens to the check, so a failed one cannot end crossings.
 struct BorderCheckGate;
@@ -438,10 +445,22 @@ impl Drop for BorderCheckGate {
     }
 }
 
+fn now_ms() -> u64 {
+    let since_the_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    since_the_epoch.as_millis() as u64
+}
+
 pub fn send_focus_if_cursor_is_on_valid_border() {
+    let now = now_ms();
+    if now.saturating_sub(LAST_BORDER_CHECK_MS.load(std::sync::atomic::Ordering::SeqCst)) < BORDER_CHECK_INTERVAL_MS {
+        return; // Early return, the cursor was where it is a moment ago
+    }
     if IS_CHECKING_BORDER.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return; // Early return, a check is already reading the cursor position
     }
+    LAST_BORDER_CHECK_MS.store(now, std::sync::atomic::Ordering::SeqCst);
 
     let app_handle = get_handle();
 
