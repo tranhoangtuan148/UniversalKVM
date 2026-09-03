@@ -786,25 +786,34 @@ pub fn run() {
                                 Err(err) => { log_lock_error_void(format!("Lock error before trying to shrink memory footprint: {err}"), &blocking_loop_app_handle); return; }, // Early return
                             };
 
-                            // Optimize RAM memory usage
+                            // Optimize RAM memory usage without thrashing active queues
                             for app in state.network_info.discovered_apps.values_mut() {
-                                app.info.file_transfers.shrink_to_fit();
-                                app.confirmed_file_chunks.shrink_to_fit();
-                                app.received_file_chunks.shrink_to_fit();
-                                app.received_requests_queue.shrink_to_fit();
-                                app.requests_queue.shrink_to_fit();
-                                app.responses_queue.shrink_to_fit();
+                                if app.info.file_transfers.capacity() > 64 {
+                                    app.info.file_transfers.shrink_to_fit();
+                                }
+                                if app.confirmed_file_chunks.capacity() > 64 {
+                                    app.confirmed_file_chunks.shrink_to_fit();
+                                }
+                                if app.received_file_chunks.capacity() > 64 {
+                                    app.received_file_chunks.shrink_to_fit();
+                                }
+                                if app.received_requests_queue.capacity() > 256 {
+                                    app.received_requests_queue.shrink_to(64);
+                                }
+                                if app.requests_queue.capacity() > 256 {
+                                    app.requests_queue.shrink_to(64);
+                                }
+                                if app.responses_queue.capacity() > 64 {
+                                    app.responses_queue.shrink_to_fit();
+                                }
                             }
-                            state.network_info.discovered_apps.shrink_to_fit();
-                            state.keyboards_info_map.shrink_to_fit();
-                            state.mouses_info_map.shrink_to_fit();
 
                             // Optimize memory less for better speed
-                            if state.received_keyboards_events_queue.capacity() >= 128 {
-                                state.received_keyboards_events_queue.shrink_to_fit();
+                            if state.received_keyboards_events_queue.capacity() >= 256 {
+                                state.received_keyboards_events_queue.shrink_to(64);
                             }
-                            if state.received_mouses_events_queue.capacity() >= 128 {
-                                state.received_mouses_events_queue.shrink_to_fit();
+                            if state.received_mouses_events_queue.capacity() >= 256 {
+                                state.received_mouses_events_queue.shrink_to(64);
                             }
                         }
 
@@ -816,32 +825,38 @@ pub fn run() {
                 let execute_received_events_app_handle = app_handle.clone();
                 std::thread::spawn(move || {
                     loop {
-                        // Wait after a request has been executed, then check if there are keyboard or mouse events to execute
-                        let signal_executed_requests;
-                        {
+                        // Check if there are already events to execute before blocking
+                        let has_events = {
                             let state = execute_received_events_app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
                             match state.lock() {
-                                Ok(state) => {
-                                    signal_executed_requests = state.network_info.signal_executed_requests_queue.clone();
+                                Ok(state) => !state.received_keyboards_events_queue.is_empty() || !state.received_mouses_events_queue.is_empty(),
+                                Err(_) => false,
+                            }
+                        };
+
+                        if !has_events {
+                            // Wait after a request has been executed, then check if there are keyboard or mouse events to execute
+                            let signal_executed_requests;
+                            {
+                                let state = execute_received_events_app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
+                                match state.lock() {
+                                    Ok(state) => {
+                                        signal_executed_requests = state.network_info.signal_executed_requests_queue.clone();
+                                    },
+                                    Err(err) => { log_lock_error_void(format!("Lock error when blocking for received events: {err}"), &execute_received_events_app_handle); return; },
+                                };
+                            }
+                            match signal_executed_requests.0.lock() {
+                                Ok(lock) => {
+                                    // Use 5ms wait_timeout to prevent lost wakeups from stalling the input execution
+                                    let _ = signal_executed_requests.1.wait_timeout(lock, std::time::Duration::from_millis(5));
                                 },
-                                Err(err) => { log_lock_error_void(format!("Lock error when blocking for received events: {err}"), &execute_received_events_app_handle); return; },
+                                Err(err) => {
+                                    log_lock_error_void(format!("Lock error when blocking to wait for received events: {err}"), &execute_received_events_app_handle);
+                                    return;
+                                },
                             };
                         }
-                        match signal_executed_requests.0.lock() {
-                            Ok(lock) => {
-                                match signal_executed_requests.1.wait(lock) {
-                                    Ok(_) => (),
-                                    Err(err) => {
-                                        log_lock_error_void(format!("Lock error when waiting for received events: {err}"), &execute_received_events_app_handle);
-                                        return;
-                                    },
-                                }
-                            },
-                            Err(err) => {
-                                log_lock_error_void(format!("Lock error when blocking to wait for received events: {err}"), &execute_received_events_app_handle);
-                                return;
-                            },
-                        };
 
                         let execute_keyboard_events_monitor = TimeMonitor::new("Executing keyboard events".to_string(), &execute_received_events_app_handle);
                         execute_keyboard_events(&execute_received_events_app_handle);

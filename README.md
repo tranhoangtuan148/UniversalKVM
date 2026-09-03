@@ -132,12 +132,12 @@ Every asset is named `UniversalKVM-<version>-<platform>.<ext>`:
 
 | Platform | File |
 | --- | --- |
-| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.3-macOS-AppleSilicon.dmg` |
-| macOS, Intel | `UniversalKVM-1.0.3-macOS-Intel.dmg` |
-| Debian, Ubuntu, Mint | `UniversalKVM-1.0.3-Linux-x86_64.deb` |
-| Fedora, RHEL | `UniversalKVM-1.0.3-Linux-x86_64.rpm` |
-| Any Linux, portable | `UniversalKVM-1.0.3-Linux-x86_64.AppImage` |
-| Windows | `UniversalKVM-1.0.3-Windows-x64.msi` |
+| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.4-macOS-AppleSilicon.dmg` |
+| macOS, Intel | `UniversalKVM-1.0.4-macOS-Intel.dmg` |
+| Debian, Ubuntu, Mint | `UniversalKVM-1.0.4-Linux-x86_64.deb` |
+| Fedora, RHEL | `UniversalKVM-1.0.4-Linux-x86_64.rpm` |
+| Any Linux, portable | `UniversalKVM-1.0.4-Linux-x86_64.AppImage` |
+| Windows | `UniversalKVM-1.0.4-Windows-x64.msi` |
 
 Substitute the version you are installing. On macOS, `uname -m` prints `arm64` for
 Apple silicon and `x86_64` for Intel.
@@ -167,10 +167,10 @@ sudo gpasswd -d $USER input
 
 Then install the package for your distribution:
 
-* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.3-Linux-x86_64.deb` and install it.
+* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.4-Linux-x86_64.deb` and install it.
 * Fedora and other Red Hat based distributions: download
-  `UniversalKVM-1.0.3-Linux-x86_64.rpm` and install it.
-* Any distribution: download `UniversalKVM-1.0.3-Linux-x86_64.AppImage`, make it
+  `UniversalKVM-1.0.4-Linux-x86_64.rpm` and install it.
+* Any distribution: download `UniversalKVM-1.0.4-Linux-x86_64.AppImage`, make it
   executable with `chmod +x`, and run it. No installation needed.
 
 Granting the `input` group to one executable and user is more secure than adding the
@@ -205,7 +205,7 @@ group to your user globally.
 
 ### Windows
 
-1. Download `UniversalKVM-1.0.3-Windows-x64.msi` and install it.
+1. Download `UniversalKVM-1.0.4-Windows-x64.msi` and install it.
 
    The installer is unsigned, so SmartScreen shows *"Windows protected your PC"*.
    Choose **More info** → **Run anyway** to continue.

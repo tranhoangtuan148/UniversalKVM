@@ -86,13 +86,15 @@ pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, Stri
 
 
     // Before returning, update the keyboards on the frontend
-    let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(|keyboard_info| ActiveKeyboardBackendResponse {
-        name: keyboard_info.keyboard.device_name.to_string(),
-        id: keyboard_info.keyboard.device_path.to_string(),
-        active: keyboard_info.active,
-    }).collect();
-    drop(state); // For optimisation
-    to_frontend_update_keyboard_devices(response, app_handle);
+    if has_been_updated {
+        let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(|keyboard_info| ActiveKeyboardBackendResponse {
+            name: keyboard_info.keyboard.device_name.to_string(),
+            id: keyboard_info.keyboard.device_path.to_string(),
+            active: keyboard_info.active,
+        }).collect();
+        drop(state); // For optimisation
+        to_frontend_update_keyboard_devices(response, app_handle);
+    }
 
     Ok(has_been_updated)
 }

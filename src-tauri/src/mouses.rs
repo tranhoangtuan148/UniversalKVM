@@ -88,13 +88,15 @@ pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String>
 
 
     // Before returning, update the mouses on the frontend
-    let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(|mouse_info| ActiveMouseBackendResponse {
-        name: mouse_info.mouse.device_name.to_string(),
-        id: mouse_info.mouse.device_path.to_string(),
-        active: mouse_info.active,
-    }).collect();
-    drop(state); // For optimisation
-    to_frontend_update_mouse_devices(response, app_handle);
+    if has_been_updated {
+        let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(|mouse_info| ActiveMouseBackendResponse {
+            name: mouse_info.mouse.device_name.to_string(),
+            id: mouse_info.mouse.device_path.to_string(),
+            active: mouse_info.active,
+        }).collect();
+        drop(state); // For optimisation
+        to_frontend_update_mouse_devices(response, app_handle);
+    }
 
     Ok(has_been_updated)
 }

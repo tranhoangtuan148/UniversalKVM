@@ -15,6 +15,7 @@ use libp2p::{
     futures::AsyncReadExt,
     futures::AsyncWriteExt,
     futures::stream::StreamExt,
+    futures::io::BufReader,
     request_response,
     mdns,
     noise,
@@ -604,7 +605,62 @@ async fn check_network_requests(app_handle: &AppHandle) -> Result<bool, ()> {
     Ok(true)
 }
 
-async fn send_network_requests(existing_streams_map: &Arc<tokio::sync::Mutex<std::collections::HashMap<libp2p::PeerId, libp2p::Stream>>>, swarm: &mut libp2p::Swarm<SimpleBehaviour>, app_handle: &AppHandle) {
+pub struct PeerStreamQueues {
+    pub input_senders: HashMap<libp2p::PeerId, tokio::sync::mpsc::UnboundedSender<Vec<NetworkRequest>>>,
+    pub bulk_senders: HashMap<libp2p::PeerId, tokio::sync::mpsc::UnboundedSender<Vec<NetworkRequest>>>,
+}
+
+fn dispatch_stream_requests(
+    destination_id: libp2p::PeerId,
+    requests: Vec<NetworkRequest>,
+    senders_map: &mut HashMap<libp2p::PeerId, tokio::sync::mpsc::UnboundedSender<Vec<NetworkRequest>>>,
+    swarm: &libp2p::Swarm<SimpleBehaviour>,
+    stream_type: &'static str,
+) {
+    if requests.is_empty() {
+        return;
+    }
+
+    if let Some(tx) = senders_map.get(&destination_id) {
+        if !tx.is_closed() {
+            let _ = tx.send(requests);
+            return;
+        }
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<NetworkRequest>>();
+    let _ = tx.send(requests);
+    senders_map.insert(destination_id, tx);
+
+    let mut control = swarm.behaviour().stream.new_control();
+    tokio::spawn(async move {
+        let mut stream = match control.open_stream(destination_id, STREAM_PROTOCOL).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                log::error!("Failed to open {stream_type} stream to {destination_id}: {err}");
+                return;
+            }
+        };
+
+        while let Some(batch) = rx.recv().await {
+            let mut all = batch;
+            while let Ok(more) = rx.try_recv() {
+                all.extend(more);
+            }
+            if let Err(err) = send_network_requests_to_stream(all, &mut stream).await {
+                log::error!("Failed to send on {stream_type} stream to {destination_id}: {err}");
+                let _ = stream.close().await;
+                break;
+            }
+        }
+    });
+}
+
+async fn send_network_requests(
+    peer_stream_queues: &mut PeerStreamQueues,
+    swarm: &mut libp2p::Swarm<SimpleBehaviour>,
+    app_handle: &AppHandle,
+) {
     let mut requests_to_send: std::collections::HashMap<libp2p::PeerId, Vec<NetworkRequest>> = HashMap::new();
 
     {
@@ -632,13 +688,7 @@ async fn send_network_requests(existing_streams_map: &Arc<tokio::sync::Mutex<std
             };
 
             let mut network_requests = Vec::with_capacity(app_destination.requests_queue.len());
-            while !app_destination.requests_queue.is_empty() {
-                let request = app_destination.requests_queue.pop_front();
-                let request = match request {
-                    Some(request) => request,
-                    None => { continue }, // Should never happen
-                };
-
+            while let Some(request) = app_destination.requests_queue.pop_front() {
                 log::debug!("Sending message {:?} to {}", request.action, request.to_id);
                 network_requests.push(NetworkRequest {
                     action: request.action,
@@ -652,19 +702,14 @@ async fn send_network_requests(existing_streams_map: &Arc<tokio::sync::Mutex<std
 
     // Send requests after state lock is dropped
     for (destination_id, network_requests) in requests_to_send {
-
         let (normal_requests, stream_requests): (Vec<_>, Vec<_>) = network_requests.into_iter()
-        .partition(|network_request|
-            // Send some requests with a libp2p's RequestResponse, because its error handling to manage connections is simpler.
-            network_request.action == NetworkAction::Connect
-            || network_request.action == NetworkAction::ConnectionAccepted
-            || network_request.action == NetworkAction::Disconnect
-            || network_request.action == NetworkAction::Broadcast
-            || network_request.action == NetworkAction::RequestBroadcast
-
-            // For many requests between peers (mouse events, keyboard events, clipboard events, etc.), using a stream is more optimal 
-            // or even necessary for large requests containing a file chunk.
-        );
+            .partition(|network_request|
+                network_request.action == NetworkAction::Connect
+                || network_request.action == NetworkAction::ConnectionAccepted
+                || network_request.action == NetworkAction::Disconnect
+                || network_request.action == NetworkAction::Broadcast
+                || network_request.action == NetworkAction::RequestBroadcast
+            );
 
         if !normal_requests.is_empty() {
             swarm
@@ -672,12 +717,34 @@ async fn send_network_requests(existing_streams_map: &Arc<tokio::sync::Mutex<std
         }
 
         if !stream_requests.is_empty() {
-            let control = swarm.behaviour().stream.new_control();
-            // A thread is needed to prevent swarm from blocking itself with the control.
-            let existing_streams_map_copy = existing_streams_map.clone();
-            tokio::spawn(async move {
-                open_stream_and_send_requests(destination_id, stream_requests, existing_streams_map_copy, control).await;
-            });
+            let (input_requests, bulk_requests): (Vec<_>, Vec<_>) = stream_requests.into_iter()
+                .partition(|req| matches!(
+                    req.action,
+                    NetworkAction::MouseEvent
+                    | NetworkAction::KeyboardEvent
+                    | NetworkAction::FocusEvent
+                    | NetworkAction::SetOfMonitorsEvent
+                ));
+
+            if !input_requests.is_empty() {
+                dispatch_stream_requests(
+                    destination_id,
+                    input_requests,
+                    &mut peer_stream_queues.input_senders,
+                    swarm,
+                    "input",
+                );
+            }
+
+            if !bulk_requests.is_empty() {
+                dispatch_stream_requests(
+                    destination_id,
+                    bulk_requests,
+                    &mut peer_stream_queues.bulk_senders,
+                    swarm,
+                    "bulk",
+                );
+            }
         }
     }
 }
@@ -697,7 +764,7 @@ fn receive_network_requests(from_id: &String, network_requests: Vec<NetworkReque
     }
 }
 
-async fn read_network_request_from_stream(stream: &mut libp2p::Stream) -> Result<Vec<NetworkRequest>, String> {
+async fn read_network_request_from_stream<R: AsyncReadExt + Unpin>(stream: &mut R) -> Result<Vec<NetworkRequest>, String> {
     let mut requests_len_bytes = [0u8; 2];
     let bytes_result = stream.read_exact(&mut requests_len_bytes).await;
     let requests_len = match bytes_result {
@@ -749,66 +816,16 @@ async fn read_network_request_from_stream(stream: &mut libp2p::Stream) -> Result
 async fn send_network_requests_to_stream(network_requests: Vec<NetworkRequest>, stream: &mut libp2p::Stream) -> Result<(), String> {
     let bytes = NetworkRequest::all_into_bytes(network_requests);
 
-    match stream.write_all(&bytes).await {
-        Ok(_) => {
-            // Note: write_all can succeed even when the other app's read stream is closed.
-
-            // Nothing to do here
-            Ok(())
-        },
-        Err(err) => {
-            let message = format!("Failed to write to stream: {}", err).to_string();
-            Err(message)
-        },
+    if let Err(err) = stream.write_all(&bytes).await {
+        return Err(format!("Failed to write to stream: {}", err));
     }
+    if let Err(err) = stream.flush().await {
+        return Err(format!("Failed to flush stream: {}", err));
+    }
+    Ok(())
 }
 
 const STREAM_PROTOCOL: libp2p::StreamProtocol = libp2p::StreamProtocol::new("/iofpstream"); // io frontend protototype stream
-
-/// This function will attempt to open a stream if no stream exists with the peer.
-/// - If a stream already exists, it is used instead.
-///
-/// If a request fails to be sent, the stream is closed and removed from `existing_streams_map`.
-async fn open_stream_and_send_requests(
-    peer: libp2p::PeerId,
-    network_requests: Vec<NetworkRequest>,
-    existing_streams_map: Arc<tokio::sync::Mutex<std::collections::HashMap<libp2p::PeerId, libp2p::Stream>>>,
-    mut control: libp2p_stream::Control,
-) {
-    let mut existing_streams_map = existing_streams_map.lock().await;
-
-    // Create a stream if none exists
-    if existing_streams_map.get(&peer).is_none() {
-        let stream = match control.open_stream(peer, STREAM_PROTOCOL).await {
-            Ok(stream) => stream,
-            Err(err) => {
-                log::error!("Failed to open stream: {}", err);
-                return; // Early return
-            }
-        };
-        existing_streams_map.insert(peer, stream);
-    }
-
-    let mut should_remove_stream = false;
-    // This if block should always be executed
-    if let Some(stream) = existing_streams_map.get_mut(&peer) {
-        let result = send_network_requests_to_stream(network_requests, stream).await;
-        if let Err(err) = result {
-            log::error!("Failed to send request after opening stream: {}", err);
-            // When there is an error, close the stream
-            let _ = stream.close().await;
-            log::error!("Closed write stream.");
-            // After the stream is closed, it will be removed from the map
-            should_remove_stream = true;
-        };
-    }
-
-    if should_remove_stream {
-        let _ = existing_streams_map.remove(&peer);
-        // Optimise memory usage
-        existing_streams_map.shrink_to_fit();
-    }
-}
 
 pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     const PING_TIMEOUT_S: u16 = 8; // Currently unused. Initially the Ping protocol was used to manage automatic disconnections, but it was unreliable.
@@ -864,7 +881,7 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_tcp(
-            tcp::Config::default(),
+            tcp::Config::default().nodelay(true),
             noise::Config::new,
             || {
                 let mut yamux_config = yamux::Config::default();
@@ -921,15 +938,18 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
         .new_control()
         .accept(STREAM_PROTOCOL)?;
 
-    // Used to store a stream for each peer, for efficient message sending for keyboard and mouse events
-    let existing_streams_map: Arc<tokio::sync::Mutex<std::collections::HashMap<libp2p::PeerId, libp2p::Stream>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    // Used to store senders for each peer, for efficient message sending for keyboard and mouse events
+    let mut peer_stream_queues = PeerStreamQueues {
+        input_senders: HashMap::new(),
+        bulk_senders: HashMap::new(),
+    };
 
     loop {
         tokio::select! {
             // Send any submitted requests
             result = check_network_requests(app_handle) => {
                 if let Ok(has_requests_to_send) = result && has_requests_to_send {
-                    send_network_requests(&existing_streams_map, &mut swarm, app_handle).await;
+                    send_network_requests(&mut peer_stream_queues, &mut swarm, app_handle).await;
                 }
             },
             result = check_received_network_requests(app_handle) => {
@@ -984,6 +1004,8 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
 
                     SwarmEvent::Behaviour(SimpleBehaviourEvent::Mdns(libp2p::mdns::Event::Discovered(list))) => {
                         for (peer_id, multiaddr) in list {
+                            swarm.add_peer_address(peer_id, multiaddr.clone());
+
                             let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
                             let mut state = match state.lock() {
                                 Ok(state) => state,
@@ -1013,6 +1035,9 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
                     },
                     SwarmEvent::Behaviour(SimpleBehaviourEvent::Mdns(libp2p::mdns::Event::Expired(list))) => {
                         for (peer_id, multiaddr) in list {
+                            peer_stream_queues.input_senders.remove(&peer_id);
+                            peer_stream_queues.bulk_senders.remove(&peer_id);
+
                             let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
                             let mut state = match state.lock() {
                                 Ok(state) => state,
@@ -1138,6 +1163,10 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
                             },
                         };
                     },
+                    SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                        peer_stream_queues.input_senders.remove(&peer_id);
+                        peer_stream_queues.bulk_senders.remove(&peer_id);
+                    },
                     SwarmEvent::Behaviour(event) => log::debug!("{event:?}"),
                     _ => {}
                 };
@@ -1149,9 +1178,9 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
                 if let Some((peer, stream)) = event {
                     let app_handle_copy = get_handle();
                     tokio::spawn(async move {
-                        let mut stream = stream;
+                        let mut reader = BufReader::with_capacity(32 * 1024, stream);
                         loop {
-                            match read_network_request_from_stream(&mut stream).await {
+                            match read_network_request_from_stream(&mut reader).await {
                                 Ok(network_requests) => {
                                     let from_id = peer.to_string();
 
@@ -1164,6 +1193,7 @@ pub async fn networking_loop(app_handle: &AppHandle) -> Result<(), Box<dyn std::
                                 Err(err) => {
                                     log::error!("Failed to read stream request: {}", err);
                                     // When there is an error, close the stream
+                                    let mut stream = reader.into_inner();
                                     let _ = stream.close().await;
                                     log::error!("Closed read stream.");
                                     // After the stream is closed, end this thread
