@@ -1,0 +1,110 @@
+/*
+	The monitor layout is the one thing this app exists to configure, so it is drawn
+	as a plan view: a measured field with a hairline grid, rather than a decorated panel.
+*/
+
+.monitors {
+	margin-bottom: var(--gap-4);
+}
+
+.monitors-frame {
+	border: 1px solid rgb(var(--line));
+	border-radius: var(--radius);
+	background-color: rgb(var(--panel));
+	overflow: hidden;
+	transition: border-color 120ms ease;
+}
+
+/* Editing is a mode, so the frame itself says so. */
+.monitors-frame-editing {
+	border-color: rgb(var(--brass));
+}
+
+.monitors-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--gap-3);
+	padding: var(--gap-2) var(--gap-3);
+	border-bottom: 1px solid rgb(var(--line));
+	flex-wrap: wrap;
+}
+
+.monitors-toolbar-label {
+	font-family: var(--font-data);
+	font-size: 0.66rem;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: rgb(var(--text-faint));
+}
+
+.monitors-frame-editing .monitors-toolbar-label {
+	color: rgb(var(--brass));
+}
+
+.monitors-toolbar-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+}
+
+.monitors-hint {
+	margin: 0;
+	padding: var(--gap-2) var(--gap-3);
+	border-bottom: 1px solid rgb(var(--line));
+	background-color: rgb(var(--brass) / 0.07);
+	font-size: 0.8rem;
+	color: rgb(var(--text-dim));
+	max-width: none;
+}
+
+/* The field: a measured surface the screens sit on. */
+.monitors-field {
+	position: relative;
+	padding: var(--gap-4);
+	background-color: rgb(var(--ink));
+	/* The grid measures the field. It stays faint so the screens stay the subject. */
+	background-image:
+		repeating-linear-gradient(to right, rgb(var(--line) / 0.3) 0 1px, transparent 1px 32px),
+		repeating-linear-gradient(to bottom, rgb(var(--line) / 0.3) 0 1px, transparent 1px 32px);
+	background-position: center center;
+}
+
+/*
+	Two diagonal corner brackets, not four: enough to read as a drawing frame
+	without ringing the whole box.
+*/
+.monitors-field::before,
+.monitors-field::after {
+	content: "";
+	position: absolute;
+	width: 10px;
+	height: 10px;
+	border: 1px solid rgb(var(--brass));
+	pointer-events: none;
+}
+
+.monitors-field::before {
+	top: 7px;
+	left: 7px;
+	border-right: none;
+	border-bottom: none;
+}
+
+.monitors-field::after {
+	bottom: 7px;
+	right: 7px;
+	border-left: none;
+	border-top: none;
+}
+
+#svg-monitors-area {
+	position: relative;
+}
+
+#svg-monitors-area svg {
+	display: block;
+	width: 100%;
+	max-height: 46vh;
+}

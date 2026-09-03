@@ -1,0 +1,9 @@
+{
+  "app": {
+    "windows": [
+      {
+        "dragDropEnabled": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,127 @@
+.app-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* ---------- Top bar ---------- */
+
+.app-bar {
+  display: flex;
+  align-items: stretch;
+  gap: var(--gap-4);
+  padding: 0 var(--gap-4);
+  background-color: rgb(var(--panel));
+  border-bottom: 1px solid rgb(var(--line));
+  flex: 0 0 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding-right: var(--gap-4);
+  border-right: 1px solid rgb(var(--line));
+  cursor: default;
+  user-select: none;
+}
+
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.brand-name {
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(var(--text));
+  white-space: nowrap;
+}
+
+.brand-name-accent {
+  color: rgb(var(--brass));
+}
+
+/* ---------- Tabs ---------- */
+
+.tabs-list {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  padding: 11px 12px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgb(var(--text-faint));
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabs-trigger:hover {
+  color: rgb(var(--text));
+  border-bottom-color: rgb(var(--line-strong));
+}
+
+.tabs-trigger[data-state="active"] {
+  color: rgb(var(--text));
+  border-bottom-color: rgb(var(--brass));
+}
+
+.tabs-trigger:focus-visible {
+  outline: 2px solid rgb(var(--brass));
+  outline-offset: -2px;
+}
+
+.tab-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+/* Only appears when there is something to count. */
+.tab-badge {
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 999px;
+  background-color: rgb(var(--alert));
+  color: rgb(var(--ink));
+}
+
+/* ---------- Content ---------- */
+
+.tab {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--gap-4) var(--gap-5);
+}
+
+.tab[data-state="inactive"] {
+  display: none;
+}

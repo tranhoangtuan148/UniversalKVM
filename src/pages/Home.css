@@ -1,0 +1,185 @@
+.home {
+	max-width: 900px;
+}
+
+/* ---------- Status lamp ---------- */
+
+/*
+	A single 8px dot carries connection state. Colour alone never carries it:
+	the words next to the lamp always say the same thing.
+*/
+.lamp {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	background-color: rgb(var(--text-faint));
+}
+
+.lamp-connected {
+	background-color: rgb(var(--signal));
+	box-shadow: 0 0 0 3px rgb(var(--signal-soft));
+}
+
+.lamp-online {
+	background-color: transparent;
+	border: 2px solid rgb(var(--text-dim));
+}
+
+.lamp-offline {
+	background-color: rgb(var(--line-strong));
+}
+
+/* ---------- Machine cards ---------- */
+
+.machine-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--gap-2);
+}
+
+.machine-card {
+	overflow: hidden;
+	transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+/* This machine gets the brass edge, matching the accent's meaning elsewhere. */
+.machine-card-self {
+	border-left: 2px solid rgb(var(--brass));
+}
+
+.machine-row {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--gap-3);
+	padding: var(--gap-3) var(--gap-3);
+	flex-wrap: wrap;
+}
+
+.machine-identity {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.machine-name-line {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	min-width: 0;
+}
+
+.machine-name {
+	font-size: 0.98rem;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.machine-id-hint {
+	color: rgb(var(--text-faint));
+}
+
+.machine-status {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	font-size: 0.82rem;
+	color: rgb(var(--text-dim));
+}
+
+.machine-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	flex: 0 0 auto;
+}
+
+/* ---------- Collapsible details ---------- */
+
+.machine-details {
+	border-top: 1px solid rgb(var(--line));
+	background-color: rgb(var(--ink));
+	padding: var(--gap-3);
+}
+
+.detail-list {
+	display: grid;
+	grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+	gap: var(--gap-1) var(--gap-3);
+	margin: 0;
+}
+
+.detail-list dt {
+	font-family: var(--font-data);
+	font-size: 0.62rem;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: rgb(var(--text-faint));
+	padding-top: 2px;
+}
+
+.detail-list dd {
+	margin: 0;
+	word-break: break-all;
+}
+
+/* ---------- Inline editors ---------- */
+
+.machine-editor {
+	border-top: 1px solid rgb(var(--line));
+	padding: var(--gap-3);
+	max-width: 480px;
+}
+
+.password-field {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-1);
+}
+
+.password-field input {
+	flex: 1;
+	min-width: 0;
+}
+
+/* ---------- File drop targets ---------- */
+
+/* Every connected machine lights up on drag, and the one under the cursor lights brighter. */
+.drop-target-ready {
+	background-color: rgb(var(--drop-ready));
+	border-color: rgb(var(--line-strong));
+}
+
+.drop-target-active {
+	background-color: rgb(var(--drop-active));
+	border-color: rgb(var(--signal));
+}
+
+/* ---------- File transfer progress ---------- */
+
+.transfer {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	margin-top: var(--gap-1);
+}
+
+.transfer-track {
+	width: 120px;
+	height: 3px;
+	border-radius: 2px;
+	background-color: rgb(var(--line));
+	overflow: hidden;
+}
+
+.transfer-fill {
+	height: 100%;
+	background-color: rgb(var(--signal));
+	transition: width 200ms linear;
+}

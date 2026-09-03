@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    UniversalKVM app icon.
+    Two cables crossing: one keyboard and mouse swapping between two machines.
+    Two shapes on a plate, so the silhouette survives 16 px.
+  -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#212A31"/>
+      <stop offset="1" stop-color="#0D1216"/>
+    </linearGradient>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="196" fill="url(#plate)"/>
+  <rect x="76" y="76" width="872" height="872" rx="192" fill="none" stroke="#3C4A54" stroke-width="8"/>
+  <path d="M 296 320 C 470 320 554 704 728 704"
+        fill="none" stroke="#E0A64B" stroke-width="80" stroke-linecap="round"/>
+  <path d="M 296 704 C 470 704 554 320 728 320"
+        fill="none" stroke="#4FC3D9" stroke-width="80" stroke-linecap="round"/>
+</svg>

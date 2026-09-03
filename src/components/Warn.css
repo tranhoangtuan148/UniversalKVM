@@ -1,0 +1,17 @@
+/* Inline caution: says what is wrong and what to do, in the interface's own voice. */
+.warn-text {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-1);
+    margin: var(--gap-1) 0 0;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: rgb(var(--caution));
+}
+
+.warn-icon {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+    margin-top: 2px;
+}

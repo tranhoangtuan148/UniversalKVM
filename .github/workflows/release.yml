@@ -1,0 +1,210 @@
+name: Release
+
+# Push a version tag to cut a release:
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# Each platform builds its own installers, because Tauri bundles native packages
+# and cannot cross-compile them. The build jobs only build; a final job renames
+# every bundle so the platform is obvious from the filename, then publishes one
+# draft release with the whole set attached.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: macOS (Apple silicon)
+            slug: macOS-AppleSilicon
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            name: macOS (Intel)
+            slug: macOS-Intel
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: Linux (x86_64)
+            slug: Linux-x86_64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows (x64)
+            slug: Windows-x64
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri's Linux build needs the system webkit and appindicator libraries.
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libudev-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libgtk-3-dev
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: pnpm install --frozen-lockfile
+
+      # No tagName, so this builds without touching the release.
+      - uses: tauri-apps/tauri-action@v0
+        id: tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+
+      # Tauri names bundles after the architecture alone (_aarch64, _amd64, _x64),
+      # which does not say which OS they belong to. Rename them so the platform is
+      # readable on the release page, and drop the updater tarballs: no updater is
+      # configured, so they cannot be used.
+      - name: Collect and rename installers
+        shell: bash
+        env:
+          SLUG: ${{ matrix.slug }}
+          PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          version=$(node -p "require('./package.json').version")
+
+          echo "$PATHS" | node -e '
+            let raw = "";
+            process.stdin.on("data", d => raw += d);
+            process.stdin.on("end", () => {
+              for (const p of JSON.parse(raw)) console.log(p);
+            });
+          ' | while read -r path; do
+            [ -f "$path" ] || continue
+            base=$(basename "$path")
+
+            case "$base" in
+              *.app.tar.gz|*.app.tar.gz.sig|*.sig)
+                echo "skip (updater artifact): $base"
+                continue
+                ;;
+            esac
+
+            # Longest extension first, so .tar.gz style suffixes are not mistaken.
+            case "$base" in
+              *-setup.exe) ext="-setup.exe" ;;
+              *.AppImage)  ext=".AppImage" ;;
+              *.dmg)       ext=".dmg" ;;
+              *.deb)       ext=".deb" ;;
+              *.rpm)       ext=".rpm" ;;
+              *.msi)       ext=".msi" ;;
+              *.exe)       ext=".exe" ;;
+              *)           ext=".${base##*.}" ;;
+            esac
+
+            new="UniversalKVM-${version}-${SLUG}${ext}"
+            cp "$path" "dist-release/$new"
+            echo "$base  ->  $new"
+          done
+
+          echo "--- collected ---"
+          ls -la dist-release
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.slug }}
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: staging
+          pattern: installers-*
+          merge-multiple: true
+
+      - name: List what will be published
+        run: ls -la staging
+
+      # A label per file, so the release page reads as platform names rather than
+      # architecture strings. gh takes them as "path#label".
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          label_for() {
+            case "$1" in
+              *macOS-AppleSilicon.dmg) echo "macOS — Apple silicon (M1 and later)" ;;
+              *macOS-Intel.dmg)        echo "macOS — Intel" ;;
+              *Linux-x86_64.deb)       echo "Linux — Debian, Ubuntu, Mint (x86_64)" ;;
+              *Linux-x86_64.rpm)       echo "Linux — Fedora, RHEL (x86_64)" ;;
+              *Linux-x86_64.AppImage)  echo "Linux — portable AppImage (x86_64)" ;;
+              *Windows-x64.msi)        echo "Windows — installer (x64)" ;;
+              *Windows-x64-setup.exe)  echo "Windows — setup executable (x64)" ;;
+              *)                       echo "" ;;
+            esac
+          }
+
+          args=()
+          for f in staging/*; do
+            label=$(label_for "$f")
+            if [ -n "$label" ]; then
+              args+=("$f#$label")
+            else
+              args+=("$f")
+            fi
+          done
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${args[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --title "UniversalKVM ${TAG#v}" \
+              --draft \
+              --notes "Installers for macOS, Linux, and Windows are attached below." \
+              "${args[@]}"
+          fi

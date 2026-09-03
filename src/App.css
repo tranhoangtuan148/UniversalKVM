@@ -1,0 +1,399 @@
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+  UniversalKVM design tokens.
+
+  Dark is the base. The light palette is layered under `prefers-color-scheme: light`,
+  which the backend drives through `window.set_theme` when the theme setting changes.
+
+  Two accents, each with a fixed meaning:
+    --brass this machine, and anything you can act on
+    --signal a live connection, and the monitor that currently holds the cursor
+*/
+:root {
+  --font-ui: "Space Grotesk Variable", "Space Grotesk", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-data: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Surfaces, darkest to lightest */
+  --ink: 15 20 24;
+  --panel: 22 28 33;
+  --panel-raised: 29 37 43;
+  --line: 42 52 59;
+  --line-strong: 60 74 84;
+
+  /* Text */
+  --text: 221 228 232;
+  --text-dim: 138 154 165;
+  --text-faint: 98 112 122;
+
+  /* Accents */
+  --brass: 224 166 75;
+  --brass-soft: 84 62 30;
+  --signal: 79 195 217;
+  --signal-soft: 26 66 76;
+  --alert: 226 112 95;
+  --caution: 224 184 75;
+
+  /* Drag-and-drop feedback */
+  --drop-active: 26 66 76;
+  --drop-ready: 29 37 43;
+
+  /* Names kept for the monitor viewer, which reads them from SVG attributes */
+  --baseColor: var(--text);
+  --baseElementColor: var(--panel-raised);
+  --activeElementColor: var(--line);
+  --baseBackground: var(--ink);
+  --greenNetworkColor: var(--signal);
+  --yellowNetworkColor: var(--caution);
+  --redErrorColor: var(--alert);
+  --activeDragColor: var(--drop-active);
+  --possibleDragColor: var(--drop-ready);
+
+  /* Rhythm */
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 18px;
+  --gap-5: 28px;
+  --radius: 3px;
+
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 400;
+  color: rgb(var(--text));
+  background-color: rgb(var(--ink));
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink: 242 240 236;
+    --panel: 250 249 246;
+    --panel-raised: 255 255 255;
+    --line: 216 212 204;
+    --line-strong: 178 173 164;
+
+    --text: 26 32 36;
+    --text-dim: 92 102 110;
+    --text-faint: 138 147 154;
+
+    --brass: 158 106 20;
+    --brass-soft: 240 226 198;
+    --signal: 21 122 143;
+    --signal-soft: 208 235 240;
+    --alert: 183 60 44;
+    --caution: 158 118 16;
+
+    --drop-active: 208 235 240;
+    --drop-ready: 235 232 226;
+
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: rgb(var(--ink));
+}
+
+body {
+  overflow: hidden;
+}
+
+/* ---------- Layout shell ---------- */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ---------- Type scale ---------- */
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.4rem;
+}
+h2 {
+  font-size: 1.05rem;
+}
+h3 {
+  font-size: 0.95rem;
+}
+h4 {
+  font-size: 0.85rem;
+}
+
+p {
+  margin: 0 0 var(--gap-3);
+  color: rgb(var(--text-dim));
+  max-width: 68ch;
+}
+
+a {
+  color: rgb(var(--signal));
+}
+
+/* An eyebrow: small caps label, a hairline that fills the row, and an optional count. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  margin: var(--gap-5) 0 var(--gap-3);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--text-faint));
+  white-space: nowrap;
+}
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: rgb(var(--line));
+}
+.eyebrow-count {
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--text-dim));
+}
+.eyebrow:first-child {
+  margin-top: var(--gap-3);
+}
+
+/* Anything the machine produced: ids, addresses, paths, sizes, resolutions. */
+.mono {
+  font-family: var(--font-data);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--text-dim));
+  letter-spacing: -0.01em;
+}
+
+.dim {
+  color: rgb(var(--text-dim));
+}
+
+/* ---------- Forms ---------- */
+
+.form-element {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--gap-3);
+}
+
+.form-label {
+  margin: 0 0 var(--gap-1);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--text-faint));
+}
+
+.form-submit-button {
+  margin-top: var(--gap-2);
+  align-self: flex-start;
+}
+
+input,
+select,
+button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: rgb(var(--text));
+  border-radius: var(--radius);
+  border: 1px solid rgb(var(--line));
+  background-color: rgb(var(--panel-raised));
+  padding: 6px 10px;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+input,
+select {
+  min-width: 0;
+}
+
+input[type="text"],
+input[type="name"],
+input[type="number"],
+input[type="password"],
+select {
+  font-family: var(--font-data);
+  font-size: 0.8rem;
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+input[type="checkbox"]:checked {
+  background-color: rgb(var(--brass));
+  border-color: rgb(var(--brass));
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid rgb(var(--ink));
+  border-width: 0 2px 2px 0;
+  transform: rotate(40deg);
+}
+
+input:hover,
+select:hover {
+  border-color: rgb(var(--line-strong));
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+[data-radix-collection-item]:focus-visible {
+  outline: 2px solid rgb(var(--brass));
+  outline-offset: 1px;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  white-space: nowrap;
+}
+button:hover {
+  border-color: rgb(var(--brass));
+  color: rgb(var(--brass));
+}
+button:active {
+  background-color: rgb(var(--line));
+}
+
+/* The one filled control on a screen: the action you most likely came to take. */
+button.primary {
+  background-color: rgb(var(--brass));
+  border-color: rgb(var(--brass));
+  color: rgb(var(--ink));
+  font-weight: 600;
+}
+button.primary:hover {
+  background-color: rgb(var(--brass) / 0.85);
+  color: rgb(var(--ink));
+}
+
+/* Icon-only affordances sitting inline with text. */
+button.icon-button {
+  padding: 3px;
+  background: none;
+  border-color: transparent;
+  color: rgb(var(--text-dim));
+  line-height: 0;
+}
+button.icon-button:hover {
+  color: rgb(var(--brass));
+  border-color: rgb(var(--line));
+}
+
+/* ---------- Status ---------- */
+
+.network-green {
+  color: rgb(var(--signal));
+}
+.network-yellow {
+  color: rgb(var(--caution));
+}
+.error-red {
+  color: rgb(var(--alert));
+}
+
+/* ---------- Cards ---------- */
+
+.card {
+  border: 1px solid rgb(var(--line));
+  border-radius: var(--radius);
+  background-color: rgb(var(--panel));
+}
+
+/* ---------- Collapsible detail toggles ---------- */
+
+.collapsible-arrow-collapsed[data-state="open"] {
+  display: none;
+}
+.collapsible-arrow-opened[data-state="closed"] {
+  display: none;
+}
+
+/* ---------- Empty states ---------- */
+
+/* An empty screen says what to do next, never just "nothing here". */
+.empty-state {
+  border: 1px dashed rgb(var(--line));
+  border-radius: var(--radius);
+  padding: var(--gap-4);
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Scrollbars ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--ink));
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--line));
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--line-strong));
+}

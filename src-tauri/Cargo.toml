@@ -1,0 +1,41 @@
+[package]
+name = "universalkvm"
+version = "1.0.0"
+description = "UniversalKVM, a software KVM that shares one keyboard and mouse across multiple computers."
+edition = "2024"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "universalkvm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+log = "0.4"
+tauri = { version = "2.9", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-shell = "2.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1.0.0", features = ["alloc"] }
+tauri-plugin-log = "2.7"
+tauri-plugin-os = "2.3"
+tokio = { version = "1.41.1", features = ["full"] }
+
+xavkeyboardandmousegrabber = { version = "0.1.0", features = ["serde"] }
+libp2p = { version = "0.56", features = ["tokio", "cbor", "identify", "macros", "mdns", "noise", "ping", "quic", "request-response", "tcp", "yamux"] }
+libp2p-stream = { version = "0.4.0-alpha" }
+gethostname = "1.1.0"
+dirs = "6.0.0"
+arboard = { version="3.6.1", features= ["wayland-data-control"] }
+
+# Using jemalloc to improve RAM memory footprint
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+opt-level = "s" # Optimising for smaller binary

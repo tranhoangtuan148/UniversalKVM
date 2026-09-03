@@ -1,0 +1,68 @@
+/*
+	Colours that must follow the theme live here rather than on SVG attributes,
+	because a presentation attribute cannot read a CSS custom property.
+	The per-monitor colours stay as attributes: they come from the backend.
+
+	Selectors are ordered weakest first, and the two state rules are qualified
+	with .monitor-plate so they outrank the plain hover rule.
+*/
+
+.monitor-plate {
+	cursor: pointer;
+	transition: fill-opacity 100ms ease;
+}
+
+.monitor-plate:hover {
+	fill-opacity: 0.4;
+}
+
+/*
+	Both states apply to every screen of a machine at once, so they only take over the
+	outline. Keeping each screen's own fill colour means a multi-monitor machine does not
+	collapse into one flat block.
+*/
+
+/* The machine you are about to send the keyboard and mouse to. */
+.monitor-plate.monitor-hovered,
+.monitor-plate.monitor-hovered:hover {
+	stroke: rgb(var(--signal));
+	stroke-width: 3;
+	fill-opacity: 0.36;
+}
+
+/* The machine that currently holds the cursor. */
+.monitor-plate.monitor-with-focus,
+.monitor-plate.monitor-with-focus:hover {
+	stroke: rgb(var(--signal));
+	stroke-width: 4;
+	fill-opacity: 0.3;
+}
+
+.monitor-label {
+	fill: rgb(var(--text));
+	font-family: var(--font-ui);
+	font-weight: 600;
+}
+
+.monitor-spec {
+	fill: rgb(var(--text-dim));
+	font-family: var(--font-data);
+}
+
+.monitor-cursor-target {
+	fill: rgb(var(--brass) / 0.25);
+	stroke: rgb(var(--brass));
+	stroke-width: 1.5;
+	vector-effect: non-scaling-stroke;
+}
+
+.svg-delete-border-pair-button {
+	background-color: rgb(var(--panel-raised));
+	color: rgb(var(--text-dim));
+	border-color: rgb(var(--line-strong)) !important;
+}
+
+.svg-delete-border-pair-button:hover {
+	color: rgb(var(--alert));
+	border-color: rgb(var(--alert)) !important;
+}

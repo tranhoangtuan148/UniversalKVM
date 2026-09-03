@@ -1,0 +1,71 @@
+.settings {
+	max-width: 640px;
+}
+
+/*
+	One row per setting: label on the left, control on the right, hairline between.
+	Rows that need a save keep their warning inline, right under the control.
+*/
+.setting {
+	display: grid;
+	grid-template-columns: 12em minmax(0, 1fr);
+	align-items: center;
+	gap: var(--gap-2) var(--gap-3);
+	padding: var(--gap-2) 0;
+	border-bottom: 1px solid rgb(var(--line));
+}
+
+.setting-label {
+	font-size: 0.85rem;
+	color: rgb(var(--text-dim));
+}
+
+.setting-control {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	min-width: 0;
+}
+
+.setting-control input[type="number"] {
+	width: 8em;
+}
+
+.setting-control input[type="text"] {
+	flex: 1;
+	min-width: 0;
+}
+
+/* A read-only value: shown, not editable. */
+.setting-readonly {
+	word-break: break-all;
+	padding: 6px 0;
+}
+
+.setting-note {
+	grid-column: 2;
+	margin: 0;
+	font-size: 0.78rem;
+	color: rgb(var(--text-faint));
+}
+
+@media (max-width: 520px) {
+	.setting {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.setting-note {
+		grid-column: 1;
+	}
+}
+
+/* Warnings belong under the control they refer to, not back at the label. */
+.setting > .warn-text {
+	grid-column: 2;
+	margin: 0;
+}
+
+@media (max-width: 520px) {
+	.setting > .warn-text {
+		grid-column: 1;
+	}
+}

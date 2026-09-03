@@ -1,0 +1,119 @@
+.devices {
+	max-width: 720px;
+}
+
+.device-section-header {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-3);
+	margin: var(--gap-5) 0 var(--gap-3);
+}
+
+.device-section-header:first-child {
+	margin-top: var(--gap-3);
+}
+
+.device-section-header .eyebrow {
+	margin: 0;
+	flex: 1;
+}
+
+.device-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	background-color: rgb(var(--line));
+	border: 1px solid rgb(var(--line));
+	border-radius: var(--radius);
+	overflow: hidden;
+}
+
+.device-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--gap-3);
+	padding: var(--gap-2) var(--gap-3);
+	background-color: rgb(var(--panel));
+}
+
+.device-identity {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-2);
+	min-width: 0;
+}
+
+.device-name {
+	font-size: 0.88rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A captured device is the exception, so it is the one that gets weight. */
+.device-name-capturing {
+	font-weight: 600;
+	color: rgb(var(--text));
+}
+
+/* Virtual devices are created by this app, so they are labelled and cannot be toggled. */
+.device-tag {
+	font-family: var(--font-data);
+	font-size: 0.6rem;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: rgb(var(--text-faint));
+	border: 1px solid rgb(var(--line));
+	border-radius: 2px;
+	padding: 1px 4px;
+	white-space: nowrap;
+}
+
+.device-details {
+	padding: var(--gap-2) var(--gap-3);
+	background-color: rgb(var(--ink));
+}
+
+/* ---------- Capture switch ---------- */
+
+.SwitchRoot {
+	all: unset;
+	display: inline-flex;
+	align-items: center;
+	width: 34px;
+	height: 18px;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	position: relative;
+	cursor: pointer;
+	background-color: rgb(var(--line-strong));
+	border: 1px solid transparent;
+	transition: background-color 120ms ease;
+}
+
+.SwitchRoot[data-state="checked"] {
+	background-color: rgb(var(--brass));
+}
+
+.SwitchRoot:focus-visible {
+	outline: 2px solid rgb(var(--brass));
+	outline-offset: 2px;
+}
+
+.SwitchThumb {
+	display: block;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background-color: rgb(var(--panel-raised));
+	transition: transform 120ms ease;
+	will-change: transform;
+	transform: translateX(2px);
+}
+
+.SwitchRoot[data-state="checked"] .SwitchThumb {
+	background-color: rgb(var(--ink));
+	transform: translateX(18px);
+}

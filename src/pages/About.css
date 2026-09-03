@@ -1,0 +1,88 @@
+.about {
+	max-width: 640px;
+	padding-top: var(--gap-4);
+}
+
+.about-header {
+	display: flex;
+	align-items: center;
+	gap: var(--gap-4);
+	margin-bottom: var(--gap-4);
+}
+
+.about-mark {
+	width: 68px;
+	height: 68px;
+	flex: 0 0 auto;
+}
+
+.about-title {
+	font-family: var(--font-data);
+	font-size: 1.15rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	margin: 0;
+}
+
+.about-title-accent {
+	color: rgb(var(--brass));
+}
+
+.about-tagline {
+	margin: var(--gap-1) 0 0;
+	font-size: 0.92rem;
+	color: rgb(var(--text-dim));
+}
+
+.about-list {
+	margin: 0 0 var(--gap-3);
+	padding-left: 1.1em;
+	color: rgb(var(--text-dim));
+	font-size: 0.85rem;
+}
+
+.about-list li {
+	margin-bottom: var(--gap-1);
+}
+
+.about-list li::marker {
+	color: rgb(var(--text-faint));
+}
+
+.about-list strong {
+	color: rgb(var(--text));
+	font-weight: 600;
+}
+
+.about-list code {
+	font-size: 0.8rem;
+	background-color: rgb(var(--panel-raised));
+	border: 1px solid rgb(var(--line));
+	border-radius: 2px;
+	padding: 0 3px;
+}
+
+/* Per-platform limits: three short columns beat one long list. */
+.about-limits {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: var(--gap-4);
+}
+
+.about-limits h4 {
+	margin-bottom: var(--gap-2);
+	padding-bottom: var(--gap-1);
+	border-bottom: 1px solid rgb(var(--line));
+	color: rgb(var(--text-dim));
+	font-family: var(--font-data);
+	font-size: 0.66rem;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.about-limits .about-list {
+	margin-bottom: 0;
+	font-size: 0.8rem;
+}

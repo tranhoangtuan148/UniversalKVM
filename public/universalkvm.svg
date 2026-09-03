@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UniversalKVM">
+  <!--
+    Two cables crossing: one keyboard and mouse swapping between two machines.
+    The same mark as the app icon, without its plate, so it works on any surface.
+    Colours are fixed rather than currentColor, because this file is loaded through
+    an <img> tag and cannot inherit the page's text colour. Both read on either theme.
+  -->
+  <path d="M 18 18 C 29 18 34 46 45 46"
+        fill="none" stroke="#E0A64B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 18 46 C 29 46 34 18 45 18"
+        fill="none" stroke="#4FC3D9" stroke-width="7" stroke-linecap="round"/>
+</svg>
