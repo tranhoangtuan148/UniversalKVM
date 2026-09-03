@@ -132,12 +132,12 @@ Every asset is named `UniversalKVM-<version>-<platform>.<ext>`:
 
 | Platform | File |
 | --- | --- |
-| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.0-macOS-AppleSilicon.dmg` |
-| macOS, Intel | `UniversalKVM-1.0.0-macOS-Intel.dmg` |
-| Debian, Ubuntu, Mint | `UniversalKVM-1.0.0-Linux-x86_64.deb` |
-| Fedora, RHEL | `UniversalKVM-1.0.0-Linux-x86_64.rpm` |
-| Any Linux, portable | `UniversalKVM-1.0.0-Linux-x86_64.AppImage` |
-| Windows | `UniversalKVM-1.0.0-Windows-x64.msi` |
+| macOS, Apple silicon (M1 and later) | `UniversalKVM-1.0.1-macOS-AppleSilicon.dmg` |
+| macOS, Intel | `UniversalKVM-1.0.1-macOS-Intel.dmg` |
+| Debian, Ubuntu, Mint | `UniversalKVM-1.0.1-Linux-x86_64.deb` |
+| Fedora, RHEL | `UniversalKVM-1.0.1-Linux-x86_64.rpm` |
+| Any Linux, portable | `UniversalKVM-1.0.1-Linux-x86_64.AppImage` |
+| Windows | `UniversalKVM-1.0.1-Windows-x64.msi` |
 
 Substitute the version you are installing. On macOS, `uname -m` prints `arm64` for
 Apple silicon and `x86_64` for Intel.
@@ -167,10 +167,10 @@ sudo gpasswd -d $USER input
 
 Then install the package for your distribution:
 
-* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.0-Linux-x86_64.deb` and install it.
+* Debian, Ubuntu, Mint: download `UniversalKVM-1.0.1-Linux-x86_64.deb` and install it.
 * Fedora and other Red Hat based distributions: download
-  `UniversalKVM-1.0.0-Linux-x86_64.rpm` and install it.
-* Any distribution: download `UniversalKVM-1.0.0-Linux-x86_64.AppImage`, make it
+  `UniversalKVM-1.0.1-Linux-x86_64.rpm` and install it.
+* Any distribution: download `UniversalKVM-1.0.1-Linux-x86_64.AppImage`, make it
   executable with `chmod +x`, and run it. No installation needed.
 
 Granting the `input` group to one executable and user is more secure than adding the
@@ -178,15 +178,38 @@ group to your user globally.
 
 ### macOS
 
-1. Download the `.dmg` for your Mac's architecture and install it.
-2. Grant accessibility: **System Settings** → **Privacy & Security** →
+1. Download the `.dmg` for your Mac's architecture and drag **UniversalKVM** to
+   Applications.
+
+2. Clear the quarantine flag:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/UniversalKVM.app
+   ```
+
+   Without this, macOS reports *"UniversalKVM is damaged and can't be opened"*. The
+   build is not signed with an Apple Developer ID and is not notarized, so Gatekeeper
+   refuses it. Right-click → Open does not get past this particular error; the
+   attribute has to come off.
+
+   That command tells macOS to stop treating the app as an untrusted download, so only
+   run it on a file you trust. You can check the download against the `sha256` of the
+   release asset first.
+
+3. Grant accessibility: **System Settings** → **Privacy & Security** →
    **Accessibility** → add **UniversalKVM**.
-3. Launch it once and grant the local network permission when prompted.
-4. Quit and reopen the app, so the local network permission takes effect.
+
+4. Launch it once and grant the local network permission when prompted.
+
+5. Quit and reopen the app, so the local network permission takes effect.
 
 ### Windows
 
-1. Download `UniversalKVM-1.0.0-Windows-x64.msi` and install it.
+1. Download `UniversalKVM-1.0.1-Windows-x64.msi` and install it.
+
+   The installer is unsigned, so SmartScreen shows *"Windows protected your PC"*.
+   Choose **More info** → **Run anyway** to continue.
+
 2. Optional, for login screens and admin prompts: download
    [PsExec](https://learn.microsoft.com/sysinternals/downloads/psexec) and make a
    shortcut that launches UniversalKVM through it, with the target set to:

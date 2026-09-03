@@ -160,6 +160,22 @@ installers and opens a **draft** release with them attached. Review the notes an
 publish it by hand. Tauri bundles native packages, so each platform must build on its
 own runner; there is no cross-compiling these.
 
+### Code signing
+
+The macOS jobs set `APPLE_SIGNING_IDENTITY=-`, which ad-hoc signs the bundle during
+bundling. **Do not remove it.** Without it Tauri leaves the app linker-signed with its
+resources unhashed, and macOS reads that as a broken signature: a downloaded copy is
+refused with *"UniversalKVM is damaged and can't be opened"* rather than the ordinary
+unidentified-developer prompt. A verification step runs `codesign --verify --strict`
+and fails the build if the signature is not valid, so this cannot regress unnoticed.
+
+Ad-hoc signing only makes the signature well formed. It is not an Apple Developer ID and
+not notarization, so Gatekeeper still does not trust the app: users either right-click →
+Open or clear the quarantine flag, both covered in the README. Real trust needs a paid
+Apple Developer account and `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` as repository
+secrets. The Windows installers are unsigned, so SmartScreen warns on first run.
+
 ## Icon and logo
 
 Both come from the same mark: two cables crossing, one keyboard and mouse swapping

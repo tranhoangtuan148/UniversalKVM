@@ -85,10 +85,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # No tagName, so this builds without touching the release.
+      #
+      # APPLE_SIGNING_IDENTITY=- makes Tauri ad-hoc sign the bundle as part of
+      # bundling. Without it the app ends up "linker-signed" with its resources
+      # unhashed, which macOS treats as a broken signature: a downloaded copy is
+      # refused with "UniversalKVM is damaged and can't be opened" rather than the
+      # ordinary unidentified-developer prompt.
+      #
+      # Ad-hoc signing is not an Apple Developer ID and is not notarization, so
+      # Gatekeeper still does not trust the app. It only makes the signature valid,
+      # which downgrades the error to one the user can dismiss. Proper trust needs
+      # APPLE_CERTIFICATE, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID secrets.
       - uses: tauri-apps/tauri-action@v0
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos') && '-' || '' }}
         with:
           args: --target ${{ matrix.target }}
 
@@ -142,6 +154,18 @@ jobs:
 
           echo "--- collected ---"
           ls -la dist-release
+
+      # A silently invalid signature is what caused the "damaged" error, so fail the
+      # build rather than shipping one.
+      - name: Verify macOS signature
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          set -euo pipefail
+          app=$(find src-tauri/target -maxdepth 5 -name "UniversalKVM.app" -type d | head -1)
+          echo "checking $app"
+          codesign -dvv "$app" 2>&1 | grep -E "Signature|flags" || true
+          codesign --verify --strict --verbose=2 "$app"
+          echo "signature is valid on disk"
 
       - uses: actions/upload-artifact@v7
         with:
