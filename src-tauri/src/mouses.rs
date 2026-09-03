@@ -1,5 +1,6 @@
 use crate::{PREVENT_TAURI_CRASH, get_handle, return_back_handle};
 use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_borders, to_frontend_update_mouse_devices};
+use crate::device_names::{DeviceKind, friendly_device_name};
 use crate::focus::send_focus_with_border;
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveMouseBackendResponse, AppSetOfMonitors, BackendGlobalState, Border, BorderPair, BorderPortal, BordersResponse, LogLevel, Monitor, MouseEventRequestContent, MouseInfo, NetworkAction, NetworkApplicationRequest, NetworkInfo, RememberedDevice, SetOfMonitors};
@@ -14,7 +15,17 @@ use tauri::{AppHandle, Manager};
 pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let available_mouses = xavkeyboardandmousegrabber::list_available_mouses();
+    let mut available_mouses = xavkeyboardandmousegrabber::list_available_mouses();
+    /*
+      Windows names a mouse after its driver class, so every device came back as
+      "HID-compliant mouse". A mouse is keyed on its name and its path, so the resolved
+      name has to replace the reported one on both the listing and the opened device,
+      otherwise the two would no longer agree on a key.
+    */
+    for mouse_properties in &mut available_mouses {
+        mouse_properties.device_name = friendly_device_name(
+            &mouse_properties.device_path, &mouse_properties.device_name, DeviceKind::Mouse);
+    }
 
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
@@ -35,9 +46,13 @@ pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String>
         } else {
             let mouse_result = xavkeyboardandmousegrabber::get_mouse(mouse_properties.device_path.to_string(), false);
             match mouse_result {
-                Ok(mouse) => {
+                Ok(mut mouse) => {
+                    mouse.device_name = friendly_device_name(
+                        &mouse.device_path, &mouse.device_name, DeviceKind::Mouse);
+                    // Remembered mice are matched on their path alone, because a resolved
+                    // name can change between versions of this app, a path cannot.
                     let default_active: bool = remembered_mouses.iter().any(|remembered_mouse|
-                        remembered_mouse.id == mouse.device_path && remembered_mouse.name == mouse.device_name);
+                        remembered_mouse.id == mouse.device_path);
                     mouses.insert(mouse.get_key(), MouseInfo {
                         mouse,
                         active: default_active,
@@ -124,14 +139,14 @@ pub fn update_active_mouses(updated_mouses: Vec<ActiveMouseBackendResponse>, app
     }
 
     // Update configuration to remember user choices. If a choice is not explicitly removed by the user, it is remembered.
+    // Matched on the id, which is the device path, so a device the user chose keeps being
+    // remembered when its resolved name changes.
     state.hard_disk_storage.remembered_mouses.retain(
-        |mouse| !mouses_to_forget.iter().any(|mouse_to_forget|
-            mouse_to_forget.id == mouse.id && mouse_to_forget.name == mouse.name));
+        |mouse| !mouses_to_forget.iter().any(|mouse_to_forget| mouse_to_forget.id == mouse.id));
     for mouse_to_remember in mouses_to_remember {
-        if !state.hard_disk_storage.remembered_mouses.iter().any(|remembered_mouse|
-            remembered_mouse.id == mouse_to_remember.id && remembered_mouse.name == mouse_to_remember.name) {
-            state.hard_disk_storage.remembered_mouses.push(mouse_to_remember);
-        }
+        state.hard_disk_storage.remembered_mouses.retain(
+            |remembered_mouse| remembered_mouse.id != mouse_to_remember.id);
+        state.hard_disk_storage.remembered_mouses.push(mouse_to_remember);
     }
     let config = state.hard_disk_storage.clone();
     let _ = save_config(app_handle, config);

@@ -39,9 +39,28 @@
 
 .device-identity {
 	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.device-heading {
+	display: flex;
 	align-items: center;
 	gap: var(--gap-2);
 	min-width: 0;
+}
+
+/*
+  Two rows can carry the same product name, because one device can expose several
+  collections. This line is what separates them, so it is always visible.
+*/
+.device-row .device-hardware {
+	font-size: 0.68rem;
+	color: rgb(var(--text-faint));
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .device-name {

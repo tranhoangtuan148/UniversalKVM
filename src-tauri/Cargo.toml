@@ -1,6 +1,6 @@
 [package]
 name = "universalkvm"
-version = "1.0.0"
+version = "1.0.1"
 description = "UniversalKVM, a software KVM that shares one keyboard and mouse across multiple computers."
 edition = "2024"
 
@@ -31,6 +31,10 @@ libp2p-stream = { version = "0.4.0-alpha" }
 gethostname = "1.1.0"
 dirs = "6.0.0"
 arboard = { version="3.6.1", features= ["wayland-data-control"] }
+
+# Reading the name Windows knows a keyboard or a mouse by, see device_names.rs
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_HumanInterfaceDevice", "Win32_Devices_Properties", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem"] }
 
 # Using jemalloc to improve RAM memory footprint
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

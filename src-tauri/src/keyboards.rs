@@ -1,4 +1,5 @@
 use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_keyboard_devices};
+use crate::device_names::{DeviceKind, friendly_device_name};
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveKeyboardBackendResponse, BackendGlobalState, KeyboardEventRequestContent, KeyboardInfo, LogLevel, NetworkAction, NetworkApplicationRequest, RememberedDevice};
 use crate::storage::save_config;
@@ -12,7 +13,17 @@ use tauri::{AppHandle, Manager};
 pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let available_keyboards = xavkeyboardandmousegrabber::list_available_keyboards();
+    let mut available_keyboards = xavkeyboardandmousegrabber::list_available_keyboards();
+    /*
+      Windows names a keyboard after its driver class, so every device came back as
+      "HID Keyboard Device". A keyboard is keyed on its name and its path, so the resolved
+      name has to replace the reported one on both the listing and the opened device,
+      otherwise the two would no longer agree on a key.
+    */
+    for keyboard_properties in &mut available_keyboards {
+        keyboard_properties.device_name = friendly_device_name(
+            &keyboard_properties.device_path, &keyboard_properties.device_name, DeviceKind::Keyboard);
+    }
 
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
@@ -33,9 +44,13 @@ pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, Stri
         } else {
             let keyboard_result = xavkeyboardandmousegrabber::get_keyboard(keyboard_properties.device_path.to_string(), false);
             match keyboard_result {
-                Ok(keyboard) => {
+                Ok(mut keyboard) => {
+                    keyboard.device_name = friendly_device_name(
+                        &keyboard.device_path, &keyboard.device_name, DeviceKind::Keyboard);
+                    // Remembered keyboards are matched on their path alone, because a
+                    // resolved name can change between versions of this app, a path cannot.
                     let default_active: bool = remembered_keyboards.iter().any(|remembered_keyboard|
-                        remembered_keyboard.id == keyboard.device_path && remembered_keyboard.name == keyboard.device_name);
+                        remembered_keyboard.id == keyboard.device_path);
                     keyboards.insert(keyboard.get_key(), KeyboardInfo {
                         keyboard,
                         active: default_active,
@@ -122,14 +137,14 @@ pub fn update_active_keyboards(updated_keyboards: Vec<ActiveKeyboardBackendRespo
     }
 
     // Update configuration to remember user choices. If a choice is not explicitly removed by the user, it is remembered.
+    // Matched on the id, which is the device path, so a device the user chose keeps being
+    // remembered when its resolved name changes.
     state.hard_disk_storage.remembered_keyboards.retain(
-        |keyboard| !keyboards_to_forget.iter().any(|keybord_to_forget|
-            keybord_to_forget.id == keyboard.id && keybord_to_forget.name == keyboard.name));
+        |keyboard| !keyboards_to_forget.iter().any(|keybord_to_forget| keybord_to_forget.id == keyboard.id));
     for keyboard_to_remember in keyboards_to_remember {
-        if !state.hard_disk_storage.remembered_keyboards.iter().any(|remembered_keyboard|
-            remembered_keyboard.id == keyboard_to_remember.id && remembered_keyboard.name == keyboard_to_remember.name) {
-            state.hard_disk_storage.remembered_keyboards.push(keyboard_to_remember);
-        }
+        state.hard_disk_storage.remembered_keyboards.retain(
+            |remembered_keyboard| remembered_keyboard.id != keyboard_to_remember.id);
+        state.hard_disk_storage.remembered_keyboards.push(keyboard_to_remember);
     }
     let config = state.hard_disk_storage.clone();
     let _ = save_config(app_handle, config);

@@ -6307,7 +6307,7 @@ dependencies = [
 
 [[package]]
 name = "universalkvm"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "arboard",
  "dirs",
@@ -6325,6 +6325,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tikv-jemallocator",
  "tokio",
+ "windows 0.62.2",
  "xavkeyboardandmousegrabber",
 ]
 

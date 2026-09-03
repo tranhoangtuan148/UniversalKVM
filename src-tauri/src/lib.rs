@@ -2,6 +2,7 @@ pub mod clipboard;
 use clipboard::initialize_clipboard;
 pub mod common;
 use common::{backend_add_log, TimeMonitor, log_lock_error_void, to_frontend_update_keyboard_devices, to_frontend_update_mouse_devices, to_frontend_update_self_app, to_frontend_update_discovered_apps, to_frontend_auto_update_discovered_apps};
+pub mod device_names;
 pub mod focus;
 use focus::{broadcast_set_of_monitors, send_focus_with_position};
 pub mod login;

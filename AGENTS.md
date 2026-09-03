@@ -39,17 +39,18 @@ src/
   pages/               Home (machines and monitor layout), Devices, Settings, Logging, About
   components/          Monitors (frame and edit mode), MonitorsViewer (the SVG), Warn
 src-tauri/src/
-  main.rs        entry point, calls universalkvm_lib::run()
-  lib.rs         Tauri setup, command handlers, tray, focus routing
-  networking.rs  libp2p: discovery, pairing, request/response, streams
-  storage.rs     config load and save, file transfer, applying config to the window
-  states.rs      backend global state and every serde type
-  keyboards.rs   keyboard capture and virtual keyboards
-  mouses.rs      mouse capture, virtual mice, border and portal geometry
-  focus.rs       which machine currently owns the cursor
-  clipboard.rs   clipboard read and write
-  login.rs       login and lock screen handling
-  common.rs      shared helpers
+  main.rs          entry point, calls universalkvm_lib::run()
+  lib.rs           Tauri setup, command handlers, tray, focus routing
+  networking.rs    libp2p: discovery, pairing, request/response, streams
+  storage.rs       config load and save, file transfer, applying config to the window
+  states.rs        backend global state and every serde type
+  keyboards.rs     keyboard capture and virtual keyboards
+  mouses.rs        mouse capture, virtual mice, border and portal geometry
+  device_names.rs  the name a device is shown under, read from the Windows device tree
+  focus.rs         which machine currently owns the cursor
+  clipboard.rs     clipboard read and write
+  login.rs         login and lock screen handling
+  common.rs        shared helpers
 ```
 
 ### How the halves talk
@@ -104,6 +105,13 @@ unless that is the task. Borders, portals, and overlap detection are interdepend
 
 **`xavkeyboardandmousegrabber` is an external crate** from crates.io that provides the
 low level device access. Its name is not ours to change.
+
+**Device names are resolved before use.** On Windows the crate reports the driver class,
+so every keyboard arrives as "HID Keyboard Device". `device_names.rs` replaces that with
+the product name, and `keyboards.rs` and `mouses.rs` apply it to both the device listing
+and the opened device, because a device is keyed on its name plus its path. Remembered
+devices in the config are therefore matched on the path alone: a resolved name can change
+between versions of this app, a path cannot.
 
 ## Design system
 

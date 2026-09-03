@@ -23,6 +23,53 @@ interface MouseDevice {
 const VIRTUAL_KEYBOARD_SUFFIX = " Virtual Keyboard";
 const VIRTUAL_MOUSE_SUFFIX = " Virtual Mouse";
 
+/*
+  One physical device can appear on more than one row: a receiver exposes a separate HID
+  collection for the keys, the media keys and the pointer, and they all carry the product
+  name. What tells them apart is in the path, so a short hardware line sits under the
+  name: how the device is attached, its vendor and product ids, and which part of the
+  device this row is. Rows sharing a name and a pair of ids are one device, so they
+  belong on together.
+*/
+function describeDevice(devicePath: string): string {
+  const path = devicePath.toUpperCase();
+  const parts: string[] = [];
+
+  if (path.includes("_DEV_VID") || path.includes("BTHENUM") || path.includes("BTHLE")) {
+    parts.push("Bluetooth");
+  } else if (path.includes("#VID_")) {
+    parts.push("USB");
+  } else if (path.startsWith("\\\\?\\ACPI#")) {
+    parts.push("Built in");
+  } else if (path.startsWith("\\\\?\\ROOT#")) {
+    parts.push("Software");
+  }
+
+  // A Bluetooth path pads the vendor id with the authority that issued it, "VID&0105AC".
+  const vendor = path.match(/VID[_&]([0-9A-F]+)/);
+  const product = path.match(/PID[_&]([0-9A-F]+)/);
+  if (vendor && product) {
+    parts.push(`${vendor[1].slice(-4)}:${product[1].slice(-4)}`);
+  }
+
+  const usbInterface = path.match(/&MI_([0-9A-F]+)/);
+  const collection = path.match(/&COL([0-9A-F]+)/);
+  if (usbInterface) {
+    parts.push(`interface ${usbInterface[1]}`);
+  } else if (collection) {
+    parts.push(`collection ${collection[1]}`);
+  }
+
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+
+  // Linux and macOS name the device node itself, so the last segment is enough. A
+  // trailing interface class, "#{884b96c3-...}" on Windows, names nothing.
+  const segments = devicePath.replace(/#\{[^}]*\}$/, "").split(/[\\/#]/).filter((segment) => segment.length > 0);
+  return segments.length > 0 ? segments[segments.length - 1] : "";
+}
+
 function Devices() {
 
   const global = useContext(GlobalContext);
@@ -130,20 +177,24 @@ function Devices() {
       {devices.map((device) => {
         const isVirtual = device.name.endsWith(virtualSuffix);
         const isCapturing = device.active && !isVirtual;
+        const hardware = describeDevice(device.id);
         return (
           <Collapsible.Root key={`${device.id}-${device.name}`}>
             <div className="device-row">
               <div className="device-identity">
-                <span className={`device-name${isCapturing ? ' device-name-capturing' : ''}`}>
-                  {device.name}
-                </span>
-                {isVirtual && <span className="device-tag">Created by this app</span>}
-                <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-collapsed" aria-label={`Show id of ${device.name}`}>
-                  <ChevronDownIcon />
-                </Collapsible.Trigger>
-                <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-opened" aria-label={`Hide id of ${device.name}`}>
-                  <ChevronUpIcon />
-                </Collapsible.Trigger>
+                <div className="device-heading">
+                  <span className={`device-name${isCapturing ? ' device-name-capturing' : ''}`}>
+                    {device.name}
+                  </span>
+                  {isVirtual && <span className="device-tag">Created by this app</span>}
+                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-collapsed" aria-label={`Show id of ${device.name}`}>
+                    <ChevronDownIcon />
+                  </Collapsible.Trigger>
+                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-opened" aria-label={`Hide id of ${device.name}`}>
+                    <ChevronUpIcon />
+                  </Collapsible.Trigger>
+                </div>
+                {hardware.length > 0 && <span className="device-hardware mono">{hardware}</span>}
               </div>
               {!isVirtual && (
                 <Switch.Root
