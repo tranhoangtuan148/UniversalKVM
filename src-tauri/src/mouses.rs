@@ -156,6 +156,51 @@ pub fn update_active_mouses(updated_mouses: Vec<ActiveMouseBackendResponse>, app
     Ok(has_been_updated)
 }
 
+/*
+  Adds up runs of relative mouse movement, so a batch of them travels as one event.
+
+  This matters because movement arrives far faster than it needs to be sent: a mouse can
+  report every millisecond, and the peer only has to learn where the cursor ended up.
+
+  Only a *run* is added up. A button, a wheel notch or an absolute position closes the run
+  and the next movement starts a new one, because the peer replays the batch in order and
+  the pointer has to be where the user left it when the button lands. Folding every
+  movement of a batch into the first one would carry a click to wherever the cursor
+  finished, which is not where it was clicked.
+*/
+fn combine_relative_movements(events: Vec<mouse_events::MouseEvent>) -> Vec<mouse_events::MouseEvent> {
+    const RELATIVE: u16 = xavkeyboardandmousegrabber::MouseMovementType::RELATIVE as u16;
+
+    let mut combined: Vec<mouse_events::MouseEvent> = Vec::with_capacity(events.len());
+    // Index into `combined` of the movement the current run is adding up, if a run is open.
+    let mut open_run: Option<usize> = None;
+
+    for mut event in events {
+        match &mut event {
+            mouse_events::MouseEvent::MovementEvent(movement) if movement.movement_type == RELATIVE => {
+                // The name is derivable from the code, so it is not worth sending.
+                movement.name.clear();
+
+                if let Some(index) = open_run
+                    && let mouse_events::MouseEvent::MovementEvent(run) = &mut combined[index] {
+                    run.x += movement.x;
+                    run.y += movement.y;
+                    continue;
+                }
+                open_run = Some(combined.len());
+            },
+            mouse_events::MouseEvent::MovementEvent(movement) => {
+                movement.name.clear();
+                open_run = None; // An absolute position is not something to add up
+            },
+            _ => open_run = None, // A button or a wheel notch has to keep its place in the batch
+        }
+        combined.push(event);
+    }
+
+    combined
+}
+
 pub fn fetch_mouse_events(app_handle: &AppHandle) {
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
@@ -224,32 +269,7 @@ pub fn fetch_mouse_events(app_handle: &AppHandle) {
                     continue;
                 }
 
-                // Network optimization: combine relative mouse movements.
-                // This optimization is significant, because mouse movement can happen frequently, e.g. every 1ms.
-                let mut combined_events = vec!();
-                for mut event in events {
-                    if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(movement_event) = &mut event {
-                        // Erase event name as an optimization
-                        movement_event.name = "".to_string();
-
-                        let existing_event = combined_events.iter_mut().find(|event| {
-                            if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(existing_movement_event) = event {
-                                return existing_movement_event.movement_type == movement_event.movement_type
-                                    && movement_event.movement_type == xavkeyboardandmousegrabber::MouseMovementType::RELATIVE as u16;
-                            }
-                            false
-                        });
-                        if let Some(existing_event) = existing_event {
-                            // This if should always be true, used to cast MouseEvent to MouseMovementEvent
-                            if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(existing_movement_event) = existing_event {
-                                existing_movement_event.x += movement_event.x;
-                                existing_movement_event.y += movement_event.y;
-                            }
-                            continue;
-                        }
-                    }
-                    combined_events.push(event);
-                }
+                let combined_events = combine_relative_movements(events);
 
 
                 // For simplicity, supported buttons are generated automatically on the app creating a virtual device
@@ -911,4 +931,86 @@ pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovem
         },
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xavkeyboardandmousegrabber::mouse_events::{
+        MouseAction, MouseEvent, MouseKeyEvent, MouseMovementEvent,
+    };
+    use xavkeyboardandmousegrabber::MouseMovementType;
+
+    fn relative(x: i32, y: i32) -> MouseEvent {
+        MouseEvent::MovementEvent(MouseMovementEvent::new(
+            0, "REL_X".to_string(), x, y, MouseMovementType::RELATIVE as u16))
+    }
+
+    fn absolute(x: i32, y: i32) -> MouseEvent {
+        MouseEvent::MovementEvent(MouseMovementEvent::new(
+            0, "ABS_X".to_string(), x, y, MouseMovementType::ABSOLUTE as u16))
+    }
+
+    fn click() -> MouseEvent {
+        MouseEvent::KeyEvent(MouseKeyEvent::new(MouseAction::PRESSED, 272, "BTN_LEFT".to_string()))
+    }
+
+    fn movements(events: &[MouseEvent]) -> Vec<(i32, i32)> {
+        events.iter().filter_map(|event| match event {
+            MouseEvent::MovementEvent(movement) => Some((movement.x, movement.y)),
+            _ => None,
+        }).collect()
+    }
+
+    #[test]
+    fn a_run_of_relative_movements_becomes_one() {
+        let combined = combine_relative_movements(vec![
+            relative(1, 2), relative(3, 4), relative(5, 6)]);
+
+        assert_eq!(combined.len(), 1);
+        assert_eq!(movements(&combined), vec![(9, 12)]);
+    }
+
+    #[test]
+    fn a_button_keeps_its_place_between_two_runs() {
+        // The peer replays the batch in order, so the pointer has to be where the user left
+        // it when the button lands. Adding both runs together would click at (30, 30).
+        let combined = combine_relative_movements(vec![
+            relative(10, 10), relative(10, 10), click(), relative(10, 10)]);
+
+        assert_eq!(combined.len(), 3);
+        assert_eq!(movements(&combined), vec![(20, 20), (10, 10)]);
+        assert!(matches!(combined[1], MouseEvent::KeyEvent(_)));
+    }
+
+    #[test]
+    fn an_absolute_position_is_never_added_up() {
+        let combined = combine_relative_movements(vec![
+            absolute(100, 100), absolute(200, 200)]);
+
+        assert_eq!(movements(&combined), vec![(100, 100), (200, 200)]);
+    }
+
+    #[test]
+    fn an_absolute_position_closes_the_run_it_follows() {
+        let combined = combine_relative_movements(vec![
+            relative(1, 1), absolute(50, 50), relative(2, 2), relative(3, 3)]);
+
+        assert_eq!(movements(&combined), vec![(1, 1), (50, 50), (5, 5)]);
+    }
+
+    #[test]
+    fn names_are_dropped_because_the_code_carries_them() {
+        let combined = combine_relative_movements(vec![relative(1, 1), absolute(2, 2)]);
+
+        for event in &combined {
+            let MouseEvent::MovementEvent(movement) = event else { panic!("expected a movement") };
+            assert!(movement.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn an_empty_batch_stays_empty() {
+        assert!(combine_relative_movements(vec![]).is_empty());
+    }
 }
