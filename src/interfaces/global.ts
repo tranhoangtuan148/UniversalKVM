@@ -1,14 +1,20 @@
 export interface Devices {
-    keyboards: {
-        name: string,
-        id: string,
-        active: boolean,
-    }[],
-    mouses: {
-        name: string,
-        id: string,
-        active: boolean,
-    }[],
+    keyboards: Device[],
+    mouses: Device[],
+}
+
+export interface Device {
+    name: string,
+    id: string,
+    active: boolean,
+
+    /*
+      The device this entry belongs to, when the system knows it. One mouse can present
+      several HID collections and a receiver presents one per function, each its own
+      entry; entries of one device agree on this, so the Devices tab shows one row for
+      them. Null where the system could not say, and the entry stands on its own.
+    */
+    physical_device_id: string | null,
 }
 
 export interface Log {

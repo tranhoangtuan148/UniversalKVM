@@ -1,10 +1,22 @@
 use tauri::AppHandle;
 
 use crate::common::{to_frontend_update_self_app};
-use xavkeyboardandmousegrabber::MouseMovement;
+use universalkvm_input::MouseMovement;
 use crate::mouses::{get_all_apps_monitors};
 use crate::states::{AppResponse, BorderPortal, FocusEventRequestContent, NetworkAction, NetworkApplicationRequest, NetworkInfo, SetOfMonitorsEventRequestContent};
 
+
+/// The peer the cursor is currently on, or an empty string when it is on this machine.
+///
+/// `discovered_apps` is keyed on the very id being looked for, so the answer is one hash
+/// lookup. The input loops ask for it on every pass, which is why it does not scan.
+pub fn focused_peer_id(network_info: &NetworkInfo) -> String {
+    let focused_id = &network_info.self_info.focused_id;
+    match network_info.discovered_apps.get(focused_id) {
+        Some(app) if app.info.authorized_by_self && app.info.authorized_by_peer => focused_id.clone(),
+        _ => String::new(),
+    }
+}
 
 pub fn send_focus_with_position(focused_id: String, position: MouseMovement, network_info: &mut NetworkInfo, app_handle: &AppHandle) {
     network_info.self_info.focused_id = focused_id.clone();
@@ -13,7 +25,7 @@ pub fn send_focus_with_position(focused_id: String, position: MouseMovement, net
     // On Windows, keyboard events cannot be captured globally with raw input api. The window requires the focus to receive keyboard events.
     // As a workaround, set the focus to the app whenever the focus is redirected.
     #[cfg(target_os = "windows")]
-    let _ = xavkeyboardandmousegrabber::globals::set_focus_to_hwnd_window();
+    let _ = universalkvm_input::globals::set_focus_to_hwnd_window();
 
     let response: AppResponse = AppResponse::from(&network_info.self_info);
     to_frontend_update_self_app(response, app_handle);
@@ -27,7 +39,7 @@ pub fn send_focus_with_border(focused_id: String, border_portal: Option<BorderPo
     // On Windows, keyboard events cannot be captured globally with raw input api. The window requires the focus to receive keyboard events.
     // As a workaround, set the focus to the app whenever the focus is redirected.
     #[cfg(target_os = "windows")]
-    let _ = xavkeyboardandmousegrabber::globals::set_focus_to_hwnd_window();
+    let _ = universalkvm_input::globals::set_focus_to_hwnd_window();
 
     let response: AppResponse = AppResponse::from(&network_info.self_info);
     to_frontend_update_self_app(response, app_handle);

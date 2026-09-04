@@ -6325,8 +6325,23 @@ dependencies = [
  "tauri-plugin-shell",
  "tikv-jemallocator",
  "tokio",
+ "universalkvm-input",
  "windows 0.62.2",
- "xavkeyboardandmousegrabber",
+]
+
+[[package]]
+name = "universalkvm-input"
+version = "0.1.0"
+source = "git+https://github.com/tranhoangtuan148/universalkvm-input?rev=27e1eff48ad95bbce3a8526e864e46ca0fc8b9fe#27e1eff48ad95bbce3a8526e864e46ca0fc8b9fe"
+dependencies = [
+ "evdev",
+ "libc",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-io-kit",
+ "serde",
+ "windows 0.62.2",
+ "windows-strings 0.5.1",
 ]
 
 [[package]]
@@ -7502,21 +7517,6 @@ dependencies = [
  "rusticata-macros",
  "thiserror 2.0.17",
  "time",
-]
-
-[[package]]
-name = "xavkeyboardandmousegrabber"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8daafea687d38f567c7db4005421052274f066ff02998e8c7309681cc84b82a"
-dependencies = [
- "evdev",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-io-kit",
- "serde",
- "windows 0.62.2",
- "windows-strings 0.5.1",
 ]
 
 [[package]]

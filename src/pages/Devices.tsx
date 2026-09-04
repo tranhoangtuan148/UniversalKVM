@@ -12,11 +12,13 @@ interface KeyboardDevice {
   name: string,
   id: string,
   active: boolean,
+  physical_device_id: string | null,
 }
 interface MouseDevice {
   name: string,
   id: string,
   active: boolean,
+  physical_device_id: string | null,
 }
 
 /* Devices this app created to replay events. They cannot be captured. */
@@ -68,6 +70,45 @@ function describeDevice(devicePath: string): string {
   // trailing interface class, "#{884b96c3-...}" on Windows, names nothing.
   const segments = devicePath.replace(/#\{[^}]*\}$/, "").split(/[\\/#]/).filter((segment) => segment.length > 0);
   return segments.length > 0 ? segments[segments.length - 1] : "";
+}
+
+/*
+  One row per device the user holds, not per HID collection.
+
+  A receiver exposes a separate collection for the keys, the media keys and the pointer,
+  and a mouse often exposes more than one of its own; each is its own entry, all carrying
+  the same product name, so the list used to repeat that name several times over with
+  nothing to choose between the rows. The backend says which device an entry belongs to,
+  and entries that agree on it are one device.
+
+  An entry the system could not place keeps a group of its own, keyed on its path, so
+  nothing is ever folded into a device it does not belong to.
+*/
+interface DeviceGroup {
+  key: string,
+  name: string,
+  devices: KeyboardDevice[],
+}
+
+function groupByDevice(devices: KeyboardDevice[]): DeviceGroup[] {
+  const groups: DeviceGroup[] = [];
+  const byKey = new Map<string, DeviceGroup>();
+
+  for (const device of devices) {
+    // Two devices can only be one when they agree on the name as well: a receiver serving
+    // a keyboard and a mouse reports one physical device for both.
+    const key = `${device.physical_device_id ?? device.id}-${device.name}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.devices.push(device);
+      continue;
+    }
+    const group = { key, name: device.name, devices: [device] };
+    byKey.set(key, group);
+    groups.push(group); // Pushed separately, so the order the backend gave is kept
+  }
+
+  return groups;
 }
 
 function Devices() {
@@ -174,38 +215,45 @@ function Devices() {
     setDevices: React.Dispatch<React.SetStateAction<KeyboardDevice[]>>,
   ) => (
     <div className="device-list">
-      {devices.map((device) => {
-        const isVirtual = device.name.endsWith(virtualSuffix);
-        const isCapturing = device.active && !isVirtual;
-        const hardware = describeDevice(device.id);
+      {groupByDevice(devices).map((group) => {
+        const isVirtual = group.name.endsWith(virtualSuffix);
+        // A device is captured when every part of it is, which is what the switch sets.
+        const isActive = group.devices.every((device) => device.active);
+        const isCapturing = isActive && !isVirtual;
+        const ids = new Set(group.devices.map((device) => device.id));
         return (
-          <Collapsible.Root key={`${device.id}-${device.name}`}>
+          <Collapsible.Root key={group.key}>
             <div className="device-row">
               <div className="device-identity">
                 <div className="device-heading">
                   <span className={`device-name${isCapturing ? ' device-name-capturing' : ''}`}>
-                    {device.name}
+                    {group.name}
                   </span>
                   {isVirtual && <span className="device-tag">Created by this app</span>}
-                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-collapsed" aria-label={`Show id of ${device.name}`}>
+                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-collapsed" aria-label={`Show id of ${group.name}`}>
                     <ChevronDownIcon />
                   </Collapsible.Trigger>
-                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-opened" aria-label={`Hide id of ${device.name}`}>
+                  <Collapsible.Trigger className="icon-button collapsible-arrow collapsible-arrow-opened" aria-label={`Hide id of ${group.name}`}>
                     <ChevronUpIcon />
                   </Collapsible.Trigger>
                 </div>
-                {hardware.length > 0 && <span className="device-hardware mono">{hardware}</span>}
+                {group.devices.length > 1 && (
+                  <span className="device-hardware mono">{`${group.devices.length} parts`}</span>
+                )}
               </div>
               {!isVirtual && (
                 <Switch.Root
                   className="SwitchRoot"
-                  aria-label={`Capture ${device.name}`}
-                  checked={device.active}
+                  aria-label={`Capture ${group.name}`}
+                  checked={isActive}
                   onCheckedChange={() => setDevices((prev) => {
                     const updated = JSON.parse(JSON.stringify(prev)) as KeyboardDevice[];
-                    const self = updated.find((prevDevice) => prevDevice.name === device.name && prevDevice.id === device.id);
-                    if (self) {
-                      self.active = !self.active;
+                    // Every part of the device follows the switch, because a device half
+                    // captured would send some of what the user does and not the rest.
+                    for (const device of updated) {
+                      if (ids.has(device.id)) {
+                        device.active = !isActive;
+                      }
                     }
                     return updated;
                   })}
@@ -215,7 +263,15 @@ function Devices() {
               )}
             </div>
             <Collapsible.Content className="device-details">
-              <span className="mono">{device.id}</span>
+              {group.devices.map((device) => {
+                const hardware = describeDevice(device.id);
+                return (
+                  <div className="device-part" key={device.id}>
+                    {hardware.length > 0 && <span className="device-hardware mono">{hardware}</span>}
+                    <span className="mono">{device.id}</span>
+                  </div>
+                );
+              })}
             </Collapsible.Content>
           </Collapsible.Root>
         );
@@ -223,8 +279,14 @@ function Devices() {
     </div>
   );
 
-  const capturedKeyboards = keyboardDevices.filter((device) => device.active && !device.name.endsWith(VIRTUAL_KEYBOARD_SUFFIX)).length;
-  const capturedMouses = mouseDevices.filter((device) => device.active && !device.name.endsWith(VIRTUAL_MOUSE_SUFFIX)).length;
+  // Counted per device, to agree with the rows: a mouse presenting three collections is
+  // one mouse captured, not three.
+  const countCaptured = (devices: KeyboardDevice[], virtualSuffix: string) =>
+    groupByDevice(devices).filter((group) =>
+      !group.name.endsWith(virtualSuffix) && group.devices.every((device) => device.active)).length;
+
+  const capturedKeyboards = countCaptured(keyboardDevices, VIRTUAL_KEYBOARD_SUFFIX);
+  const capturedMouses = countCaptured(mouseDevices, VIRTUAL_MOUSE_SUFFIX);
 
   return (
     <div className="devices">

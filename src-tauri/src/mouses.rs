@@ -1,32 +1,38 @@
 use crate::{PREVENT_TAURI_CRASH, get_handle, return_back_handle};
-use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_borders, to_frontend_update_mouse_devices};
-use crate::device_names::{DeviceKind, friendly_device_name};
-use crate::focus::send_focus_with_border;
+use crate::common::{backend_add_log, monotonic_ms, log_lock_error, log_lock_error_void, to_frontend_update_borders, to_frontend_update_mouse_devices};
+use crate::focus::{focused_peer_id, send_focus_with_border};
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveMouseBackendResponse, AppSetOfMonitors, BackendGlobalState, Border, BorderPair, BorderPortal, BordersResponse, LogLevel, Monitor, MouseEventRequestContent, MouseInfo, NetworkAction, NetworkApplicationRequest, NetworkInfo, RememberedDevice, SetOfMonitors};
 use crate::storage::save_config;
 
 use std::sync::{Arc, Mutex};
 
-use xavkeyboardandmousegrabber::{MouseProperties, mouse_events};
+use universalkvm_input::{MouseProperties, mouse_events};
 use tauri::{AppHandle, Manager};
+
+/// Describes a device for the Devices tab.
+///
+/// The physical device is looked up here rather than at each caller, so every list the
+/// frontend receives groups the same way. The library remembers the answer per path, so
+/// asking again costs a lookup.
+pub fn describe_mouse(mouse_info: &MouseInfo) -> ActiveMouseBackendResponse {
+    ActiveMouseBackendResponse {
+        name: mouse_info.mouse.device_name.to_string(),
+        id: mouse_info.mouse.device_path.to_string(),
+        active: mouse_info.active,
+        physical_device_id: universalkvm_input::device_names::resolve(
+            &mouse_info.mouse.device_path,
+            &mouse_info.mouse.device_name,
+            universalkvm_input::device_names::DeviceKind::Mouse,
+        ).physical_device_id,
+    }
+}
 
 // Returns true if a mouse has been added or removed
 pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let mut available_mouses = xavkeyboardandmousegrabber::list_available_mouses();
-    /*
-      Windows names a mouse after its driver class, so every device came back as
-      "HID-compliant mouse". A mouse is keyed on its name and its path, so the resolved
-      name has to replace the reported one on both the listing and the opened device,
-      otherwise the two would no longer agree on a key.
-    */
-    for mouse_properties in &mut available_mouses {
-        mouse_properties.device_name = friendly_device_name(
-            &mouse_properties.device_path, &mouse_properties.device_name, DeviceKind::Mouse);
-    }
-
+    let available_mouses = universalkvm_input::list_available_mouses();
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
         Ok(state) => state,
@@ -44,11 +50,9 @@ pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String>
         if is_physical_mouse {
             // Nothing to do
         } else {
-            let mouse_result = xavkeyboardandmousegrabber::get_mouse(mouse_properties.device_path.to_string(), false);
+            let mouse_result = universalkvm_input::get_mouse(mouse_properties.device_path.to_string(), false);
             match mouse_result {
-                Ok(mut mouse) => {
-                    mouse.device_name = friendly_device_name(
-                        &mouse.device_path, &mouse.device_name, DeviceKind::Mouse);
+                Ok(mouse) => {
                     // Remembered mice are matched on their path alone, because a resolved
                     // name can change between versions of this app, a path cannot.
                     let default_active: bool = remembered_mouses.iter().any(|remembered_mouse|
@@ -89,11 +93,7 @@ pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String>
 
     // Before returning, update the mouses on the frontend
     if has_been_updated {
-        let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(|mouse_info| ActiveMouseBackendResponse {
-            name: mouse_info.mouse.device_name.to_string(),
-            id: mouse_info.mouse.device_path.to_string(),
-            active: mouse_info.active,
-        }).collect();
+        let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(describe_mouse).collect();
         drop(state); // For optimisation
         to_frontend_update_mouse_devices(response, app_handle);
     }
@@ -117,8 +117,11 @@ pub fn update_active_mouses(updated_mouses: Vec<ActiveMouseBackendResponse>, app
 
     // Update mouses that have a difference in the active status
     for mouse_info in (*mouses).values_mut() {
+        // Matched on the path alone, which is what identifies a device. The name is
+        // resolved, so it can be answered differently than it was a moment ago, and a
+        // device whose name moved under it would stop matching the choice the user made.
         let updated_mouse = match updated_mouses.iter().find(|mouse|
-            mouse.id == mouse_info.mouse.device_path && mouse.name == mouse_info.mouse.device_name
+            mouse.id == mouse_info.mouse.device_path
         ) {
             Some(updated_mouse) => updated_mouse,
             None => continue, // Nothing to update, this would be an invalid mouse
@@ -156,19 +159,58 @@ pub fn update_active_mouses(updated_mouses: Vec<ActiveMouseBackendResponse>, app
     Ok(has_been_updated)
 }
 
+/*
+  Adds up runs of relative mouse movement, so a batch of them travels as one event.
+
+  This matters because movement arrives far faster than it needs to be sent: a mouse can
+  report every millisecond, and the peer only has to learn where the cursor ended up.
+
+  Only a *run* is added up. A button, a wheel notch or an absolute position closes the run
+  and the next movement starts a new one, because the peer replays the batch in order and
+  the pointer has to be where the user left it when the button lands. Folding every
+  movement of a batch into the first one would carry a click to wherever the cursor
+  finished, which is not where it was clicked.
+*/
+fn combine_relative_movements(events: Vec<mouse_events::MouseEvent>) -> Vec<mouse_events::MouseEvent> {
+    const RELATIVE: u16 = universalkvm_input::MouseMovementType::RELATIVE as u16;
+
+    let mut combined: Vec<mouse_events::MouseEvent> = Vec::with_capacity(events.len());
+    // Index into `combined` of the movement the current run is adding up, if a run is open.
+    let mut open_run: Option<usize> = None;
+
+    for mut event in events {
+        match &mut event {
+            mouse_events::MouseEvent::MovementEvent(movement) if movement.movement_type == RELATIVE => {
+                // The name is derivable from the code, so it is not worth sending.
+                movement.name.clear();
+
+                if let Some(index) = open_run
+                    && let mouse_events::MouseEvent::MovementEvent(run) = &mut combined[index] {
+                    run.x += movement.x;
+                    run.y += movement.y;
+                    continue;
+                }
+                open_run = Some(combined.len());
+            },
+            mouse_events::MouseEvent::MovementEvent(movement) => {
+                movement.name.clear();
+                open_run = None; // An absolute position is not something to add up
+            },
+            _ => open_run = None, // A button or a wheel notch has to keep its place in the batch
+        }
+        combined.push(event);
+    }
+
+    combined
+}
+
 pub fn fetch_mouse_events(app_handle: &AppHandle) {
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when fetching mouse events: {err}"), app_handle); return; }, // Early return
     };
-    let peer = state.network_info.discovered_apps.iter().find(|(_key, app)|
-        app.info.authorized_by_self && app.info.authorized_by_peer
-        && state.network_info.self_info.focused_id == app.info.id);
-    let focused_peer_id = match peer {
-        Some(app) => app.1.info.id.clone(),
-        None => "".to_string(),
-    };
+    let focused_peer_id = focused_peer_id(&state.network_info);
 
     let mouses = &mut (state.mouses_info_map);
 
@@ -224,32 +266,7 @@ pub fn fetch_mouse_events(app_handle: &AppHandle) {
                     continue;
                 }
 
-                // Network optimization: combine relative mouse movements.
-                // This optimization is significant, because mouse movement can happen frequently, e.g. every 1ms.
-                let mut combined_events = vec!();
-                for mut event in events {
-                    if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(movement_event) = &mut event {
-                        // Erase event name as an optimization
-                        movement_event.name = "".to_string();
-
-                        let existing_event = combined_events.iter_mut().find(|event| {
-                            if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(existing_movement_event) = event {
-                                return existing_movement_event.movement_type == movement_event.movement_type
-                                    && movement_event.movement_type == xavkeyboardandmousegrabber::MouseMovementType::RELATIVE as u16;
-                            }
-                            false
-                        });
-                        if let Some(existing_event) = existing_event {
-                            // This if should always be true, used to cast MouseEvent to MouseMovementEvent
-                            if let xavkeyboardandmousegrabber::MouseEvent::MovementEvent(existing_movement_event) = existing_event {
-                                existing_movement_event.x += movement_event.x;
-                                existing_movement_event.y += movement_event.y;
-                            }
-                            continue;
-                        }
-                    }
-                    combined_events.push(event);
-                }
+                let combined_events = combine_relative_movements(events);
 
 
                 // For simplicity, supported buttons are generated automatically on the app creating a virtual device
@@ -299,8 +316,9 @@ pub fn execute_mouse_events(app_handle: &AppHandle) {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when executing mouse events: {err}"), app_handle); return; }, // Early return
     };
-    let mouses_events = state.received_mouses_events_queue.clone();
-    state.received_mouses_events_queue.clear();
+    // Taking the queue hands over its buffer and leaves an empty one behind, so the events
+    // are not copied. They carry the peer's serialized payload, which is worth not copying.
+    let mouses_events = std::mem::take(&mut state.received_mouses_events_queue);
     drop(state); // Necessary to prevent a deadlock
 
     let has_events = !mouses_events.is_empty();
@@ -325,11 +343,11 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
     // If device is a virtual mouse from another machine, it needs to be created.
     if mouses.get(&mouse_properties.get_key()).is_none() {
         if mouse_properties.supported_keys.is_empty() {
-            mouse_properties.supported_keys = xavkeyboardandmousegrabber::mouse_events::get_default_supported_mouse_buttons();
+            mouse_properties.supported_keys = universalkvm_input::mouse_events::get_default_supported_mouse_buttons();
         }
 
         let virtual_mouse_info = MouseInfo {
-            mouse: xavkeyboardandmousegrabber::Mouse::new_uninitialized(&mouse_properties),
+            mouse: universalkvm_input::Mouse::new_uninitialized(&mouse_properties),
             active: true,
             virtual_mouse: None, // Will be created in the code below
         };
@@ -338,7 +356,7 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
 
     if let Some(mouse_info) = mouses.get_mut(&mouse_properties.get_key()) {
         if mouse_info.virtual_mouse.is_none() {
-            let virtual_mouse_result = xavkeyboardandmousegrabber::VirtualMouseBuilder::new()
+            let virtual_mouse_result = universalkvm_input::VirtualMouseBuilder::new()
                 .delay_ms(0)
                 .name(mouse_properties.device_name.to_string())
                 .set_supported_keys(&mouse_properties.supported_keys)
@@ -436,6 +454,10 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
   the check pushes it away.
 */
 static IS_CHECKING_BORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Reads `monotonic_ms`, never the wall clock: a clock that can step backward would read as
+/// no time passing and hold off every further check, which would end crossings altogether.
+/// Starting at zero costs at most one check in the first few milliseconds of the process,
+/// when no peer is connected yet and there is nothing to cross to.
 static LAST_BORDER_CHECK_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 const BORDER_CHECK_INTERVAL_MS: u64 = 10;
 
@@ -447,15 +469,10 @@ impl Drop for BorderCheckGate {
     }
 }
 
-fn now_ms() -> u64 {
-    let since_the_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    since_the_epoch.as_millis() as u64
-}
+
 
 pub fn send_focus_if_cursor_is_on_valid_border() {
-    let now = now_ms();
+    let now = monotonic_ms();
     if now.saturating_sub(LAST_BORDER_CHECK_MS.load(std::sync::atomic::Ordering::SeqCst)) < BORDER_CHECK_INTERVAL_MS {
         return; // Early return, the cursor was where it is a moment ago
     }
@@ -511,13 +528,13 @@ fn send_focus_if_cursor_is_on_valid_border_blocking(app_handle: &AppHandle) {
 ///
 /// Warning: if the UI is frozen, e.g. when a user minimizes the app on Windows, the function blocks.
 ///     Therefore, this function should not be called when the global state is locked.
-pub fn get_cursor_position(app_handle: &AppHandle) -> Option<xavkeyboardandmousegrabber::MouseMovement> {
+pub fn get_cursor_position(app_handle: &AppHandle) -> Option<universalkvm_input::MouseMovement> {
     let prevent_tauri_crash = PREVENT_TAURI_CRASH.get_or_init(|| Mutex::new(()));
     match prevent_tauri_crash.lock() {
         Ok(_) => {
             let cursor = app_handle.cursor_position();
             match cursor {
-                Ok(cursor) => Some(xavkeyboardandmousegrabber::MouseMovement {
+                Ok(cursor) => Some(universalkvm_input::MouseMovement {
                     x: cursor.x.round() as i32,
                     y: cursor.y.round() as i32,
                 }),
@@ -746,7 +763,7 @@ pub fn is_cursor_on_border(cursor_x: i32, cursor_y: i32, monitor: &Monitor) -> O
 /// BBBBBBBBBBBBB
 /// ```
 ///
-pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovement, self_monitors: &Vec<Monitor>, self_id: &str, borders: &[BorderPair]) -> Option<BorderPortal> {
+pub fn is_cursor_on_global_border(cursor: universalkvm_input::MouseMovement, self_monitors: &Vec<Monitor>, self_id: &str, borders: &[BorderPair]) -> Option<BorderPortal> {
     let mut on_border = None;
     let mut on_monitor = None;
     let mut monitor_index: u8 = 0;
@@ -807,8 +824,7 @@ pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovem
         }
     }
 
-    let monitor_borders = Monitor::get_monitor_borders(self_id, monitor_index, borders);
-    for monitor_border in &monitor_borders {
+    for monitor_border in Monitor::get_monitor_borders(self_id, monitor_index, borders) {
         let mut self_border = &monitor_border.pair[0];
         let mut other_border = &monitor_border.pair[1];
         if self_border.app_id != self_id {
@@ -850,7 +866,7 @@ pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovem
 }
 
 /// Returns a position to teleport to, if any
-pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitors: &[Monitor]) -> Option<xavkeyboardandmousegrabber::MouseMovement> {
+pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitors: &[Monitor]) -> Option<universalkvm_input::MouseMovement> {
     let offset = 5; // To prevent teleport back
 
     if border_portal.linked_monitor_index >= self_monitors.len() as u8 {
@@ -863,7 +879,7 @@ pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitor
         scale = 1.0;
     }
 
-    let mut position = xavkeyboardandmousegrabber::MouseMovement {
+    let mut position = universalkvm_input::MouseMovement {
         x: monitor.x,
         y: monitor.y
     };
@@ -893,7 +909,7 @@ pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitor
 /// undesirable and can cause unstable behavior when focus alternates quickly between two monitors.
 ///
 /// Warning: if the UI is frozen, this function can block because of set_cursor_position
-pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovement, border_portal: BorderPortal, app_handle: &AppHandle) {
+pub fn repulse_cursor_from_border(cursor: universalkvm_input::MouseMovement, border_portal: BorderPortal, app_handle: &AppHandle) {
     let offset = 5;
 
     match border_portal.border {
@@ -911,4 +927,85 @@ pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovem
         },
     }
 
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use universalkvm_input::mouse_events::{
+        MouseAction, MouseEvent, MouseKeyEvent, MouseMovementEvent,
+    };
+    use universalkvm_input::MouseMovementType;
+
+    fn relative(x: i32, y: i32) -> MouseEvent {
+        MouseEvent::MovementEvent(MouseMovementEvent::new(
+            0, "REL_X".to_string(), x, y, MouseMovementType::RELATIVE as u16))
+    }
+
+    fn absolute(x: i32, y: i32) -> MouseEvent {
+        MouseEvent::MovementEvent(MouseMovementEvent::new(
+            0, "ABS_X".to_string(), x, y, MouseMovementType::ABSOLUTE as u16))
+    }
+
+    fn click() -> MouseEvent {
+        MouseEvent::KeyEvent(MouseKeyEvent::new(MouseAction::PRESSED, 272, "BTN_LEFT".to_string()))
+    }
+
+    fn movements(events: &[MouseEvent]) -> Vec<(i32, i32)> {
+        events.iter().filter_map(|event| match event {
+            MouseEvent::MovementEvent(movement) => Some((movement.x, movement.y)),
+            _ => None,
+        }).collect()
+    }
+
+    #[test]
+    fn a_run_of_relative_movements_becomes_one() {
+        let combined = combine_relative_movements(vec![
+            relative(1, 2), relative(3, 4), relative(5, 6)]);
+
+        assert_eq!(combined.len(), 1);
+        assert_eq!(movements(&combined), vec![(9, 12)]);
+    }
+
+    #[test]
+    fn a_button_keeps_its_place_between_two_runs() {
+        // The peer replays the batch in order, so the pointer has to be where the user left
+        // it when the button lands. Adding both runs together would click at (30, 30).
+        let combined = combine_relative_movements(vec![
+            relative(10, 10), relative(10, 10), click(), relative(10, 10)]);
+
+        assert_eq!(combined.len(), 3);
+        assert_eq!(movements(&combined), vec![(20, 20), (10, 10)]);
+        assert!(matches!(combined[1], MouseEvent::KeyEvent(_)));
+    }
+
+    #[test]
+    fn an_absolute_position_is_never_added_up() {
+        let combined = combine_relative_movements(vec![
+            absolute(100, 100), absolute(200, 200)]);
+
+        assert_eq!(movements(&combined), vec![(100, 100), (200, 200)]);
+    }
+
+    #[test]
+    fn an_absolute_position_closes_the_run_it_follows() {
+        let combined = combine_relative_movements(vec![
+            relative(1, 1), absolute(50, 50), relative(2, 2), relative(3, 3)]);
+
+        assert_eq!(movements(&combined), vec![(1, 1), (50, 50), (5, 5)]);
+    }
+
+    #[test]
+    fn names_are_dropped_because_the_code_carries_them() {
+        let combined = combine_relative_movements(vec![relative(1, 1), absolute(2, 2)]);
+
+        for event in &combined {
+            let MouseEvent::MovementEvent(movement) = event else { panic!("expected a movement") };
+            assert!(movement.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn an_empty_batch_stays_empty() {
+        assert!(combine_relative_movements(vec![]).is_empty());
+    }
 }

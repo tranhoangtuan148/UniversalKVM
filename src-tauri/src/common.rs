@@ -27,6 +27,21 @@ pub fn ask_for_a_high_resolution_timer() {
     }
 }
 
+/*
+  Milliseconds since the process started, from a clock that only ever moves forward.
+
+  The wall clock is the wrong one to measure an interval with: NTP can step it, and
+  resuming from sleep can step it a long way. Code that gates itself on "has enough time
+  passed" reads a backward step as no time passing at all, and stops doing its work until
+  the wall clock catches up. Instant cannot step, so it cannot cause that.
+*/
+static PROCESS_START: std::sync::LazyLock<std::time::Instant> =
+    std::sync::LazyLock::new(std::time::Instant::now);
+
+pub fn monotonic_ms() -> u64 {
+    PROCESS_START.elapsed().as_millis() as u64
+}
+
 pub fn backend_add_log(log: String, level: LogLevel, app_handle: &AppHandle) {
     log::debug!("backend: backend_add_log");
     match app_handle.emit(
@@ -43,32 +58,29 @@ pub fn backend_add_log(log: String, level: LogLevel, app_handle: &AppHandle) {
 
 /// This struct memorizes the current time when created, and prints a log before being dropped, if there was a timeout
 pub struct TimeMonitor<'a> {
-    label: String,
-    start_ms: u128,
-    timeout_ms: u128,
+    label: &'static str,
+    start_ms: u64,
+    timeout_ms: u64,
     app_handle: &'a AppHandle,
 }
 impl<'a> TimeMonitor<'a> {
     /// If it takes more time to drop the TimeMonitor than the DEFAULT_TIMEOUT_MS, then a log will be generated.
-    pub fn new(label: String, app_handle: &'a AppHandle) -> TimeMonitor<'a> {
-        let start =  std::time::SystemTime::now();
-        let since_the_epoch = start.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-        TimeMonitor { label, start_ms: since_the_epoch.as_millis(), timeout_ms: DEFAULT_TIMEOUT_MS, app_handle }
+    ///
+    /// The label is borrowed, not owned: every call site passes a literal, and the input
+    /// loops build one of these on every pass, so an owned label was an allocation per
+    /// millisecond spent on a message that is almost never printed.
+    pub fn new(label: &'static str, app_handle: &'a AppHandle) -> TimeMonitor<'a> {
+        TimeMonitor { label, start_ms: monotonic_ms(), timeout_ms: DEFAULT_TIMEOUT_MS, app_handle }
     }
 
     /// If it takes more time to drop the TimeMonitor than the timeout_ms, then a log will be generated.
-    pub fn build(timeout_ms: u128, label: String, app_handle: &'a AppHandle) -> TimeMonitor<'a> {
-        let start =  std::time::SystemTime::now();
-        let since_the_epoch = start.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-        TimeMonitor { label, start_ms: since_the_epoch.as_millis(), timeout_ms, app_handle }
+    pub fn build(timeout_ms: u64, label: &'static str, app_handle: &'a AppHandle) -> TimeMonitor<'a> {
+        TimeMonitor { label, start_ms: monotonic_ms(), timeout_ms, app_handle }
     }
 }
 impl<'a> Drop for TimeMonitor<'a> {
     fn drop(&mut self) {
-        let end =  std::time::SystemTime::now();
-        let since_the_epoch = end.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-        let end_ms = since_the_epoch.as_millis();
-        let time = end_ms - self.start_ms;
+        let time = monotonic_ms().saturating_sub(self.start_ms);
         if time > self.timeout_ms {
             let log = format!("{}: took {} ms (>{} ms)", self.label, time, self.timeout_ms);
             log::debug!("{}", log);
@@ -76,7 +88,7 @@ impl<'a> Drop for TimeMonitor<'a> {
         }
     }
 }
-pub const DEFAULT_TIMEOUT_MS: u128 = 25;
+pub const DEFAULT_TIMEOUT_MS: u64 = 25;
 
 /// Always return an Error for convenience
 pub fn log_lock_error<T>(error: String, app_handle: &AppHandle) -> Result<T, String> {

@@ -52,8 +52,8 @@
 }
 
 /*
-  Two rows can carry the same product name, because one device can expose several
-  collections. This line is what separates them, so it is always visible.
+  A device that presents more than one collection says so under its name, and the
+  collections themselves are named in the details.
 */
 .device-row .device-hardware {
 	font-size: 0.68rem;
@@ -93,6 +93,26 @@
 .device-details {
 	padding: var(--gap-2) var(--gap-3);
 	background-color: rgb(var(--ink));
+}
+
+/*
+  One block per collection the device presents. How it is attached and which part of the
+  device it is sits above its path, so a device with several of them can be read.
+*/
+.device-part {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	overflow-wrap: anywhere;
+}
+
+.device-part + .device-part {
+	margin-top: var(--gap-2);
+}
+
+.device-part .device-hardware {
+	font-size: 0.68rem;
+	color: rgb(var(--text-faint));
 }
 
 /* ---------- Capture switch ---------- */

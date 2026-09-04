@@ -124,15 +124,40 @@ bounds are needed: the machine being driven asks for a check once per batch of e
 receives, so without the interval the check runs as fast as it can finish and the movement
 it is applying waits behind it for the same global state.
 
-**`xavkeyboardandmousegrabber` is an external crate** from crates.io that provides the
-low level device access. Its name is not ours to change.
+**`universalkvm-input` is ours** — it is the device layer, and it lives at
+https://github.com/tranhoangtuan148/universalkvm-input, pinned by revision in
+`src-tauri/Cargo.toml`. It is a fork of `xavkeyboardandmousegrabber` 0.1.0 by XavierF-C,
+whose first commit is the unmodified upstream source, so a diff shows everything the fork
+changes. A change to how devices are read or blocked belongs there, not in a workaround
+here. Bumping it means bumping the `rev`.
 
-**Device names are resolved before use.** On Windows the crate reports the driver class,
-so every keyboard arrives as "HID Keyboard Device". `device_names.rs` replaces that with
-the product name, and `keyboards.rs` and `mouses.rs` apply it to both the device listing
-and the opened device, because a device is keyed on its name plus its path. Remembered
-devices in the config are therefore matched on the path alone: a resolved name can change
-between versions of this app, a path cannot.
+Upstream is still maintained and asks for issues, so anything changed in the fork that is
+not specific to UniversalKVM is worth offering back.
+
+The fork can be typechecked for all three platforms from any of them:
+`cargo check --target x86_64-pc-windows-msvc` and
+`cargo check --target x86_64-unknown-linux-gnu` both work without a linker, which is the
+only way most of that code gets checked at all before it ships.
+
+**A device is its path.** `get_key` in `universalkvm-input` answers with the device path
+and nothing else, and remembered devices in the config are matched the same way. The name
+is resolved by asking the device and walking the Windows device tree, so it can be
+answered differently than it was a moment ago; anything that identifies a device by its
+name will see the device leave and a stranger arrive, and throw away the grab it held.
+The name is for showing to a person.
+
+**Device names come from the library.** On Windows the driver class is all the OS offers
+by default, so every keyboard would arrive as "HID Keyboard Device";
+`universalkvm-input`'s `device_names` resolves the real one and `list_available_*` and
+`get_*` already return it. Nothing here needs to correct a name.
+
+**One row per device, not per collection.** A receiver exposes a separate HID collection
+for the keys, the media keys and the pointer, and a mouse often exposes several of its
+own. Each is its own path and its own entry, all carrying the same product name.
+`physical_device_id` on the device responses says which device an entry belongs to, and
+`Devices.tsx` groups on it: one row, one switch, and the switch sets every part of the
+device, because a device half captured would forward some of what the user does and not
+the rest. An entry the system could not place keeps a row of its own.
 
 ## Design system
 

@@ -1,4 +1,4 @@
-use xavkeyboardandmousegrabber::{KeyEvent, Keyboard, KeyboardProperties, Mouse, MouseEvent, MouseProperties, VirtualKeyboard, VirtualMouse};
+use universalkvm_input::{KeyEvent, Keyboard, KeyboardProperties, Mouse, MouseEvent, MouseProperties, VirtualKeyboard, VirtualMouse};
 
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -75,6 +75,19 @@ pub struct ActiveKeyboardBackendResponse {
     pub name: String,
     pub id: String,
     pub active: bool,
+
+    /*
+      The device this entry belongs to, when the system knows it.
+
+      One mouse can present several HID collections, and a wireless receiver presents one
+      per function it serves. Each is its own entry here, all with the same name, so the
+      Devices tab would show several identical rows for one thing the user holds. Entries
+      of one device share this, and the tab groups on it.
+
+      None where there is no device tree to find it in, and on Windows when the walk found
+      nothing; the entry then stands for a device of its own.
+    */
+    pub physical_device_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -82,6 +95,19 @@ pub struct ActiveMouseBackendResponse {
     pub name: String,
     pub id: String,
     pub active: bool,
+
+    /*
+      The device this entry belongs to, when the system knows it.
+
+      One mouse can present several HID collections, and a wireless receiver presents one
+      per function it serves. Each is its own entry here, all with the same name, so the
+      Devices tab would show several identical rows for one thing the user holds. Entries
+      of one device share this, and the tab groups on it.
+
+      None where there is no device tree to find it in, and on Windows when the walk found
+      nothing; the entry then stands for a device of its own.
+    */
+    pub physical_device_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -267,17 +293,18 @@ impl Monitor {
         id
     }
 
-    pub fn get_monitor_borders(app_id: &str, monitor_index: u8, borders: &[BorderPair]) -> Vec<BorderPair> {
-        let mut monitor_borders = vec!();
-        for border in borders {
-            if border.is_related(app_id) &&
-                let Some(monitor_border) = border.pair.iter().find(|border| border.app_id == app_id)
-                && monitor_border.monitor_index == monitor_index
-            {
-                monitor_borders.push(border.clone());
-            }
-        }
-        monitor_borders
+    /// The borders drawn on one monitor of one app.
+    ///
+    /// Borrows rather than collecting: the cursor check asks for these on every pass, and
+    /// only ever reads them, so there is nothing for a Vec of clones to earn.
+    pub fn get_monitor_borders<'a>(app_id: &'a str, monitor_index: u8, borders: &'a [BorderPair])
+        -> impl Iterator<Item = &'a BorderPair> + 'a {
+        borders.iter().filter(move |border| {
+            border.is_related(app_id)
+                && border.pair.iter()
+                    .find(|border| border.app_id == app_id)
+                    .is_some_and(|monitor_border| monitor_border.monitor_index == monitor_index)
+        })
     }
 }
 
@@ -576,7 +603,7 @@ pub struct ConfirmedFileEventRequestContent {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FocusEventRequestContent {
     pub focused_id: String,
-    pub position: Option<xavkeyboardandmousegrabber::MouseMovement>,
+    pub position: Option<universalkvm_input::MouseMovement>,
     pub border_portal: Option<BorderPortal>,
 }
 

@@ -2,15 +2,14 @@ pub mod clipboard;
 use clipboard::initialize_clipboard;
 pub mod common;
 use common::{ask_for_a_high_resolution_timer, backend_add_log, TimeMonitor, log_lock_error_void, to_frontend_update_keyboard_devices, to_frontend_update_mouse_devices, to_frontend_update_self_app, to_frontend_update_discovered_apps, to_frontend_auto_update_discovered_apps};
-pub mod device_names;
 pub mod focus;
 use focus::{broadcast_set_of_monitors, send_focus_with_position};
 pub mod login;
 use login::{auto_connect_to_app, send_disconnect_from_app, send_connect_to_app};
 pub mod keyboards;
-use keyboards::{discover_available_keyboards, update_active_keyboards, execute_keyboard_events, fetch_keyboard_events};
+use keyboards::{describe_keyboard, discover_available_keyboards, update_active_keyboards, execute_keyboard_events, fetch_keyboard_events};
 pub mod mouses;
-use mouses::{discover_available_mouses, fetch_self_monitors, apply_new_borders, update_set_of_monitors, update_active_mouses, execute_mouse_events, get_all_apps_monitors, fetch_mouse_events};
+use mouses::{describe_mouse, discover_available_mouses, fetch_self_monitors, apply_new_borders, update_set_of_monitors, update_active_mouses, execute_mouse_events, get_all_apps_monitors, fetch_mouse_events};
 pub mod networking;
 use networking::{networking_loop, submit_network_request_locking, submit_broadcast_network_request};
 pub mod states;
@@ -303,7 +302,7 @@ async fn set_focused_id(focus: &str) -> Result<(), ()> {
     let focused_id = focus.focused_id;
     let network_info = &mut state.network_info;
 
-    send_focus_with_position(focused_id, xavkeyboardandmousegrabber::MouseMovement { x: focus.x, y: focus.y }, network_info, &app_handle);
+    send_focus_with_position(focused_id, universalkvm_input::MouseMovement { x: focus.x, y: focus.y }, network_info, &app_handle);
 
     drop(state);
     return_back_handle(app_handle);
@@ -505,11 +504,7 @@ async fn refresh_keyboards() -> Result<(), ()> {
     };
     let keyboards = &mut state.keyboards_info_map;
 
-    let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(|keyboard_info| ActiveKeyboardBackendResponse {
-        name: keyboard_info.keyboard.device_name.to_string(),
-        id: keyboard_info.keyboard.device_path.to_string(),
-        active: keyboard_info.active,
-    }).collect();
+    let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(describe_keyboard).collect();
     drop(state); // For optimisation
     to_frontend_update_keyboard_devices(response, &app_handle);
     return_back_handle(app_handle);
@@ -528,11 +523,7 @@ async fn refresh_mouses() -> Result<(), ()> {
     };
     let mouses = &mut state.mouses_info_map;
 
-    let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(|mouse_info| ActiveMouseBackendResponse {
-        name: mouse_info.mouse.device_name.to_string(),
-        id: mouse_info.mouse.device_path.to_string(),
-        active: mouse_info.active,
-    }).collect();
+    let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(describe_mouse).collect();
     drop(state); // For optimisation
     to_frontend_update_mouse_devices(response, &app_handle);
     return_back_handle(app_handle);
@@ -694,7 +685,7 @@ pub fn run() {
                     loop {
                         // Check every 1 second
                         if (i).is_multiple_of(10) {
-                            let _discover_keyboards_monitor = TimeMonitor::build(1000, "Discovery of keyboards".to_string(), &blocking_loop_app_handle);
+                            let _discover_keyboards_monitor = TimeMonitor::build(1000, "Discovery of keyboards", &blocking_loop_app_handle);
                             let discover_keyboards_app_handle = get_handle();
                             let discover_keyboards_handle = tokio::task::spawn_blocking(move || {
                                 match discover_available_keyboards(&discover_keyboards_app_handle) {
@@ -711,7 +702,7 @@ pub fn run() {
                         }
                         // Check every 1 second, with offset of 500 ms
                         if (i + 5).is_multiple_of(10) {
-                            let _discover_mouses_monitor = TimeMonitor::build(1000, "Discovery of mouses".to_string(), &blocking_loop_app_handle);
+                            let _discover_mouses_monitor = TimeMonitor::build(1000, "Discovery of mouses", &blocking_loop_app_handle);
                             let discover_mouses_app_handle = get_handle();
                             let discover_mouses_handle = tokio::task::spawn_blocking(move || {
                                 match discover_available_mouses(&discover_mouses_app_handle) {
@@ -728,7 +719,7 @@ pub fn run() {
                         }
                         // Check every 1 second, with offset of 700 ms
                         if (i + 7).is_multiple_of(10) {
-                            let _auto_login_monitor = TimeMonitor::new("Discovery of mouses".to_string(), &blocking_loop_app_handle);
+                            let _auto_login_monitor = TimeMonitor::new("Discovery of mouses", &blocking_loop_app_handle);
                             let auto_login_app_handle = get_handle();
                             let auto_login_handle = tokio::task::spawn_blocking(move || {
                                 {
@@ -754,7 +745,7 @@ pub fn run() {
                         }
                         // Check every 2 seconds, with offset of 400 ms
                         if (i + 4).is_multiple_of(2 * 10) {
-                            let _update_monitor = TimeMonitor::new("Update list of monitors".to_string(), &blocking_loop_app_handle);
+                            let _update_monitor = TimeMonitor::new("Update list of monitors", &blocking_loop_app_handle);
                             let monitors = fetch_self_monitors(&blocking_loop_app_handle);
                             let state = blocking_loop_app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
                             let mut new_self_content = None;
@@ -774,7 +765,7 @@ pub fn run() {
                         }
                         // Check every 3 seconds, with offset of 900 ms
                         if (i + 9).is_multiple_of(3 * 10) {
-                            let _update_monitor = TimeMonitor::new("Update discovered apps".to_string(), &blocking_loop_app_handle);
+                            let _update_monitor = TimeMonitor::new("Update discovered apps", &blocking_loop_app_handle);
                             to_frontend_auto_update_discovered_apps(&blocking_loop_app_handle).await;
                         }
 
@@ -858,22 +849,22 @@ pub fn run() {
                             };
                         }
 
-                        let execute_keyboard_events_monitor = TimeMonitor::new("Executing keyboard events".to_string(), &execute_received_events_app_handle);
+                        let execute_keyboard_events_monitor = TimeMonitor::new("Executing keyboard events", &execute_received_events_app_handle);
                         execute_keyboard_events(&execute_received_events_app_handle);
                         drop(execute_keyboard_events_monitor);
 
-                        let execute_mouse_events_monitor = TimeMonitor::new("Executing mouse events".to_string(), &execute_received_events_app_handle);
+                        let execute_mouse_events_monitor = TimeMonitor::new("Executing mouse events", &execute_received_events_app_handle);
                         execute_mouse_events(&execute_received_events_app_handle);
                         drop(execute_mouse_events_monitor);
                     }
                 });
 
                 loop {
-                    let fetch_keyboard_events_monitor = TimeMonitor::new("Fetching keyboard events".to_string(), &app_handle);
+                    let fetch_keyboard_events_monitor = TimeMonitor::new("Fetching keyboard events", &app_handle);
                     fetch_keyboard_events(&app_handle);
                     drop(fetch_keyboard_events_monitor);
 
-                    let fetch_mouse_events_monitor = TimeMonitor::new("Fetching mouse events".to_string(), &app_handle);
+                    let fetch_mouse_events_monitor = TimeMonitor::new("Fetching mouse events", &app_handle);
                     fetch_mouse_events(&app_handle);
                     drop(fetch_mouse_events_monitor);
 
