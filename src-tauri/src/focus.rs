@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 
 use crate::common::{to_frontend_update_self_app};
-use xavkeyboardandmousegrabber::MouseMovement;
+use universalkvm_input::MouseMovement;
 use crate::mouses::{get_all_apps_monitors};
 use crate::states::{AppResponse, BorderPortal, FocusEventRequestContent, NetworkAction, NetworkApplicationRequest, NetworkInfo, SetOfMonitorsEventRequestContent};
 
@@ -25,7 +25,7 @@ pub fn send_focus_with_position(focused_id: String, position: MouseMovement, net
     // On Windows, keyboard events cannot be captured globally with raw input api. The window requires the focus to receive keyboard events.
     // As a workaround, set the focus to the app whenever the focus is redirected.
     #[cfg(target_os = "windows")]
-    let _ = xavkeyboardandmousegrabber::globals::set_focus_to_hwnd_window();
+    let _ = universalkvm_input::globals::set_focus_to_hwnd_window();
 
     let response: AppResponse = AppResponse::from(&network_info.self_info);
     to_frontend_update_self_app(response, app_handle);
@@ -39,7 +39,7 @@ pub fn send_focus_with_border(focused_id: String, border_portal: Option<BorderPo
     // On Windows, keyboard events cannot be captured globally with raw input api. The window requires the focus to receive keyboard events.
     // As a workaround, set the focus to the app whenever the focus is redirected.
     #[cfg(target_os = "windows")]
-    let _ = xavkeyboardandmousegrabber::globals::set_focus_to_hwnd_window();
+    let _ = universalkvm_input::globals::set_focus_to_hwnd_window();
 
     let response: AppResponse = AppResponse::from(&network_info.self_info);
     to_frontend_update_self_app(response, app_handle);

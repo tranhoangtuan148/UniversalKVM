@@ -7,14 +7,14 @@ use crate::storage::save_config;
 
 use std::sync::{Arc, Mutex};
 
-use xavkeyboardandmousegrabber::{KeyboardProperties, key_events};
+use universalkvm_input::{KeyboardProperties, key_events};
 use tauri::{AppHandle, Manager};
 
 // Returns true if a keyboard has been added or removed
 pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let mut available_keyboards = xavkeyboardandmousegrabber::list_available_keyboards();
+    let mut available_keyboards = universalkvm_input::list_available_keyboards();
     /*
       Windows names a keyboard after its driver class, so every device came back as
       "HID Keyboard Device". A keyboard is keyed on its name and its path, so the resolved
@@ -43,7 +43,7 @@ pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, Stri
         if is_physical_keyboard {
             // Nothing to do
         } else {
-            let keyboard_result = xavkeyboardandmousegrabber::get_keyboard(keyboard_properties.device_path.to_string(), false);
+            let keyboard_result = universalkvm_input::get_keyboard(keyboard_properties.device_path.to_string(), false);
             match keyboard_result {
                 Ok(mut keyboard) => {
                     keyboard.device_name = friendly_device_name(
@@ -270,11 +270,11 @@ pub fn send_events_to_keyboard(events: Vec<key_events::KeyEvent>, mut keyboard_p
     // If device is a virtual keyboard from another machine, it needs to be created.
     if keyboards.get(&keyboard_properties.get_key()).is_none() {
         if keyboard_properties.supported_keys.is_empty() {
-            keyboard_properties.supported_keys = xavkeyboardandmousegrabber::key_events::get_default_supported_keys();
+            keyboard_properties.supported_keys = universalkvm_input::key_events::get_default_supported_keys();
         }
 
         let virtual_keyboard_info = KeyboardInfo {
-            keyboard: xavkeyboardandmousegrabber::Keyboard::new_uninitialized(&keyboard_properties),
+            keyboard: universalkvm_input::Keyboard::new_uninitialized(&keyboard_properties),
             active: true,
             virtual_keyboard: None, // Will be created in the code below
         };
@@ -283,7 +283,7 @@ pub fn send_events_to_keyboard(events: Vec<key_events::KeyEvent>, mut keyboard_p
 
     if let Some(keyboard_info) = keyboards.get_mut(&keyboard_properties.get_key()) {
         if keyboard_info.virtual_keyboard.is_none() {
-            let virtual_keyboard_result = xavkeyboardandmousegrabber::VirtualKeyboardBuilder::new()
+            let virtual_keyboard_result = universalkvm_input::VirtualKeyboardBuilder::new()
                 .delay_ms(0)
                 .name(keyboard_properties.device_name.to_string())
                 .set_supported_keys(&keyboard_properties.supported_keys)

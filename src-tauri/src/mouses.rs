@@ -8,14 +8,14 @@ use crate::storage::save_config;
 
 use std::sync::{Arc, Mutex};
 
-use xavkeyboardandmousegrabber::{MouseProperties, mouse_events};
+use universalkvm_input::{MouseProperties, mouse_events};
 use tauri::{AppHandle, Manager};
 
 // Returns true if a mouse has been added or removed
 pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let mut available_mouses = xavkeyboardandmousegrabber::list_available_mouses();
+    let mut available_mouses = universalkvm_input::list_available_mouses();
     /*
       Windows names a mouse after its driver class, so every device came back as
       "HID-compliant mouse". A mouse is keyed on its name and its path, so the resolved
@@ -44,7 +44,7 @@ pub fn discover_available_mouses(app_handle: &AppHandle) -> Result<bool, String>
         if is_physical_mouse {
             // Nothing to do
         } else {
-            let mouse_result = xavkeyboardandmousegrabber::get_mouse(mouse_properties.device_path.to_string(), false);
+            let mouse_result = universalkvm_input::get_mouse(mouse_properties.device_path.to_string(), false);
             match mouse_result {
                 Ok(mut mouse) => {
                     mouse.device_name = friendly_device_name(
@@ -169,7 +169,7 @@ pub fn update_active_mouses(updated_mouses: Vec<ActiveMouseBackendResponse>, app
   finished, which is not where it was clicked.
 */
 fn combine_relative_movements(events: Vec<mouse_events::MouseEvent>) -> Vec<mouse_events::MouseEvent> {
-    const RELATIVE: u16 = xavkeyboardandmousegrabber::MouseMovementType::RELATIVE as u16;
+    const RELATIVE: u16 = universalkvm_input::MouseMovementType::RELATIVE as u16;
 
     let mut combined: Vec<mouse_events::MouseEvent> = Vec::with_capacity(events.len());
     // Index into `combined` of the movement the current run is adding up, if a run is open.
@@ -340,11 +340,11 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
     // If device is a virtual mouse from another machine, it needs to be created.
     if mouses.get(&mouse_properties.get_key()).is_none() {
         if mouse_properties.supported_keys.is_empty() {
-            mouse_properties.supported_keys = xavkeyboardandmousegrabber::mouse_events::get_default_supported_mouse_buttons();
+            mouse_properties.supported_keys = universalkvm_input::mouse_events::get_default_supported_mouse_buttons();
         }
 
         let virtual_mouse_info = MouseInfo {
-            mouse: xavkeyboardandmousegrabber::Mouse::new_uninitialized(&mouse_properties),
+            mouse: universalkvm_input::Mouse::new_uninitialized(&mouse_properties),
             active: true,
             virtual_mouse: None, // Will be created in the code below
         };
@@ -353,7 +353,7 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
 
     if let Some(mouse_info) = mouses.get_mut(&mouse_properties.get_key()) {
         if mouse_info.virtual_mouse.is_none() {
-            let virtual_mouse_result = xavkeyboardandmousegrabber::VirtualMouseBuilder::new()
+            let virtual_mouse_result = universalkvm_input::VirtualMouseBuilder::new()
                 .delay_ms(0)
                 .name(mouse_properties.device_name.to_string())
                 .set_supported_keys(&mouse_properties.supported_keys)
@@ -525,13 +525,13 @@ fn send_focus_if_cursor_is_on_valid_border_blocking(app_handle: &AppHandle) {
 ///
 /// Warning: if the UI is frozen, e.g. when a user minimizes the app on Windows, the function blocks.
 ///     Therefore, this function should not be called when the global state is locked.
-pub fn get_cursor_position(app_handle: &AppHandle) -> Option<xavkeyboardandmousegrabber::MouseMovement> {
+pub fn get_cursor_position(app_handle: &AppHandle) -> Option<universalkvm_input::MouseMovement> {
     let prevent_tauri_crash = PREVENT_TAURI_CRASH.get_or_init(|| Mutex::new(()));
     match prevent_tauri_crash.lock() {
         Ok(_) => {
             let cursor = app_handle.cursor_position();
             match cursor {
-                Ok(cursor) => Some(xavkeyboardandmousegrabber::MouseMovement {
+                Ok(cursor) => Some(universalkvm_input::MouseMovement {
                     x: cursor.x.round() as i32,
                     y: cursor.y.round() as i32,
                 }),
@@ -760,7 +760,7 @@ pub fn is_cursor_on_border(cursor_x: i32, cursor_y: i32, monitor: &Monitor) -> O
 /// BBBBBBBBBBBBB
 /// ```
 ///
-pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovement, self_monitors: &Vec<Monitor>, self_id: &str, borders: &[BorderPair]) -> Option<BorderPortal> {
+pub fn is_cursor_on_global_border(cursor: universalkvm_input::MouseMovement, self_monitors: &Vec<Monitor>, self_id: &str, borders: &[BorderPair]) -> Option<BorderPortal> {
     let mut on_border = None;
     let mut on_monitor = None;
     let mut monitor_index: u8 = 0;
@@ -863,7 +863,7 @@ pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovem
 }
 
 /// Returns a position to teleport to, if any
-pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitors: &[Monitor]) -> Option<xavkeyboardandmousegrabber::MouseMovement> {
+pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitors: &[Monitor]) -> Option<universalkvm_input::MouseMovement> {
     let offset = 5; // To prevent teleport back
 
     if border_portal.linked_monitor_index >= self_monitors.len() as u8 {
@@ -876,7 +876,7 @@ pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitor
         scale = 1.0;
     }
 
-    let mut position = xavkeyboardandmousegrabber::MouseMovement {
+    let mut position = universalkvm_input::MouseMovement {
         x: monitor.x,
         y: monitor.y
     };
@@ -906,7 +906,7 @@ pub fn get_position_from_border_portal(border_portal: BorderPortal, self_monitor
 /// undesirable and can cause unstable behavior when focus alternates quickly between two monitors.
 ///
 /// Warning: if the UI is frozen, this function can block because of set_cursor_position
-pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovement, border_portal: BorderPortal, app_handle: &AppHandle) {
+pub fn repulse_cursor_from_border(cursor: universalkvm_input::MouseMovement, border_portal: BorderPortal, app_handle: &AppHandle) {
     let offset = 5;
 
     match border_portal.border {
@@ -928,10 +928,10 @@ pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovem
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xavkeyboardandmousegrabber::mouse_events::{
+    use universalkvm_input::mouse_events::{
         MouseAction, MouseEvent, MouseKeyEvent, MouseMovementEvent,
     };
-    use xavkeyboardandmousegrabber::MouseMovementType;
+    use universalkvm_input::MouseMovementType;
 
     fn relative(x: i32, y: i32) -> MouseEvent {
         MouseEvent::MovementEvent(MouseMovementEvent::new(

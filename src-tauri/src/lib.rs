@@ -303,7 +303,7 @@ async fn set_focused_id(focus: &str) -> Result<(), ()> {
     let focused_id = focus.focused_id;
     let network_info = &mut state.network_info;
 
-    send_focus_with_position(focused_id, xavkeyboardandmousegrabber::MouseMovement { x: focus.x, y: focus.y }, network_info, &app_handle);
+    send_focus_with_position(focused_id, universalkvm_input::MouseMovement { x: focus.x, y: focus.y }, network_info, &app_handle);
 
     drop(state);
     return_back_handle(app_handle);

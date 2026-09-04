@@ -1,4 +1,4 @@
-use xavkeyboardandmousegrabber::{KeyEvent, Keyboard, KeyboardProperties, Mouse, MouseEvent, MouseProperties, VirtualKeyboard, VirtualMouse};
+use universalkvm_input::{KeyEvent, Keyboard, KeyboardProperties, Mouse, MouseEvent, MouseProperties, VirtualKeyboard, VirtualMouse};
 
 use std::{collections::VecDeque, sync::{Arc, Mutex}};
 
@@ -577,7 +577,7 @@ pub struct ConfirmedFileEventRequestContent {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FocusEventRequestContent {
     pub focused_id: String,
-    pub position: Option<xavkeyboardandmousegrabber::MouseMovement>,
+    pub position: Option<universalkvm_input::MouseMovement>,
     pub border_portal: Option<BorderPortal>,
 }
 
