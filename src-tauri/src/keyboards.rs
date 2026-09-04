@@ -1,5 +1,4 @@
 use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_keyboard_devices};
-use crate::device_names::{DeviceKind, friendly_device_name};
 use crate::focus::focused_peer_id;
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveKeyboardBackendResponse, BackendGlobalState, KeyboardEventRequestContent, KeyboardInfo, LogLevel, NetworkAction, NetworkApplicationRequest, RememberedDevice};
@@ -10,22 +9,29 @@ use std::sync::{Arc, Mutex};
 use universalkvm_input::{KeyboardProperties, key_events};
 use tauri::{AppHandle, Manager};
 
+/// Describes a device for the Devices tab.
+///
+/// The physical device is looked up here rather than at each caller, so every list the
+/// frontend receives groups the same way. The library remembers the answer per path, so
+/// asking again costs a lookup.
+pub fn describe_keyboard(keyboard_info: &KeyboardInfo) -> ActiveKeyboardBackendResponse {
+    ActiveKeyboardBackendResponse {
+        name: keyboard_info.keyboard.device_name.to_string(),
+        id: keyboard_info.keyboard.device_path.to_string(),
+        active: keyboard_info.active,
+        physical_device_id: universalkvm_input::device_names::resolve(
+            &keyboard_info.keyboard.device_path,
+            &keyboard_info.keyboard.device_name,
+            universalkvm_input::device_names::DeviceKind::Keyboard,
+        ).physical_device_id,
+    }
+}
+
 // Returns true if a keyboard has been added or removed
 pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, String> {
     let mut has_been_updated = false;
 
-    let mut available_keyboards = universalkvm_input::list_available_keyboards();
-    /*
-      Windows names a keyboard after its driver class, so every device came back as
-      "HID Keyboard Device". A keyboard is keyed on its name and its path, so the resolved
-      name has to replace the reported one on both the listing and the opened device,
-      otherwise the two would no longer agree on a key.
-    */
-    for keyboard_properties in &mut available_keyboards {
-        keyboard_properties.device_name = friendly_device_name(
-            &keyboard_properties.device_path, &keyboard_properties.device_name, DeviceKind::Keyboard);
-    }
-
+    let available_keyboards = universalkvm_input::list_available_keyboards();
     let state = app_handle.state::<Arc<Mutex<BackendGlobalState>>>();
     let mut state = match state.lock() {
         Ok(state) => state,
@@ -45,9 +51,7 @@ pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, Stri
         } else {
             let keyboard_result = universalkvm_input::get_keyboard(keyboard_properties.device_path.to_string(), false);
             match keyboard_result {
-                Ok(mut keyboard) => {
-                    keyboard.device_name = friendly_device_name(
-                        &keyboard.device_path, &keyboard.device_name, DeviceKind::Keyboard);
+                Ok(keyboard) => {
                     // Remembered keyboards are matched on their path alone, because a
                     // resolved name can change between versions of this app, a path cannot.
                     let default_active: bool = remembered_keyboards.iter().any(|remembered_keyboard|
@@ -88,11 +92,7 @@ pub fn discover_available_keyboards(app_handle: &AppHandle) -> Result<bool, Stri
 
     // Before returning, update the keyboards on the frontend
     if has_been_updated {
-        let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(|keyboard_info| ActiveKeyboardBackendResponse {
-            name: keyboard_info.keyboard.device_name.to_string(),
-            id: keyboard_info.keyboard.device_path.to_string(),
-            active: keyboard_info.active,
-        }).collect();
+        let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(describe_keyboard).collect();
         drop(state); // For optimisation
         to_frontend_update_keyboard_devices(response, app_handle);
     }
@@ -116,8 +116,11 @@ pub fn update_active_keyboards(updated_keyboards: Vec<ActiveKeyboardBackendRespo
 
     // Update keyboards that have a difference in the active status
     for keyboard_info in (*keyboards).values_mut() {
+        // Matched on the path alone, which is what identifies a device. The name is
+        // resolved, so it can be answered differently than it was a moment ago, and a
+        // device whose name moved under it would stop matching the choice the user made.
         let updated_keyboard = match updated_keyboards.iter().find(|keyboard|
-            keyboard.id == keyboard_info.keyboard.device_path && keyboard.name == keyboard_info.keyboard.device_name
+            keyboard.id == keyboard_info.keyboard.device_path
         ) {
             Some(updated_keyboard) => updated_keyboard,
             None => continue, // Nothing to update, this would be an invalid keyboard

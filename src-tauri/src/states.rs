@@ -75,6 +75,19 @@ pub struct ActiveKeyboardBackendResponse {
     pub name: String,
     pub id: String,
     pub active: bool,
+
+    /*
+      The device this entry belongs to, when the system knows it.
+
+      One mouse can present several HID collections, and a wireless receiver presents one
+      per function it serves. Each is its own entry here, all with the same name, so the
+      Devices tab would show several identical rows for one thing the user holds. Entries
+      of one device share this, and the tab groups on it.
+
+      None where there is no device tree to find it in, and on Windows when the walk found
+      nothing; the entry then stands for a device of its own.
+    */
+    pub physical_device_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -82,6 +95,19 @@ pub struct ActiveMouseBackendResponse {
     pub name: String,
     pub id: String,
     pub active: bool,
+
+    /*
+      The device this entry belongs to, when the system knows it.
+
+      One mouse can present several HID collections, and a wireless receiver presents one
+      per function it serves. Each is its own entry here, all with the same name, so the
+      Devices tab would show several identical rows for one thing the user holds. Entries
+      of one device share this, and the tab groups on it.
+
+      None where there is no device tree to find it in, and on Windows when the walk found
+      nothing; the entry then stands for a device of its own.
+    */
+    pub physical_device_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

@@ -2,15 +2,14 @@ pub mod clipboard;
 use clipboard::initialize_clipboard;
 pub mod common;
 use common::{ask_for_a_high_resolution_timer, backend_add_log, TimeMonitor, log_lock_error_void, to_frontend_update_keyboard_devices, to_frontend_update_mouse_devices, to_frontend_update_self_app, to_frontend_update_discovered_apps, to_frontend_auto_update_discovered_apps};
-pub mod device_names;
 pub mod focus;
 use focus::{broadcast_set_of_monitors, send_focus_with_position};
 pub mod login;
 use login::{auto_connect_to_app, send_disconnect_from_app, send_connect_to_app};
 pub mod keyboards;
-use keyboards::{discover_available_keyboards, update_active_keyboards, execute_keyboard_events, fetch_keyboard_events};
+use keyboards::{describe_keyboard, discover_available_keyboards, update_active_keyboards, execute_keyboard_events, fetch_keyboard_events};
 pub mod mouses;
-use mouses::{discover_available_mouses, fetch_self_monitors, apply_new_borders, update_set_of_monitors, update_active_mouses, execute_mouse_events, get_all_apps_monitors, fetch_mouse_events};
+use mouses::{describe_mouse, discover_available_mouses, fetch_self_monitors, apply_new_borders, update_set_of_monitors, update_active_mouses, execute_mouse_events, get_all_apps_monitors, fetch_mouse_events};
 pub mod networking;
 use networking::{networking_loop, submit_network_request_locking, submit_broadcast_network_request};
 pub mod states;
@@ -505,11 +504,7 @@ async fn refresh_keyboards() -> Result<(), ()> {
     };
     let keyboards = &mut state.keyboards_info_map;
 
-    let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(|keyboard_info| ActiveKeyboardBackendResponse {
-        name: keyboard_info.keyboard.device_name.to_string(),
-        id: keyboard_info.keyboard.device_path.to_string(),
-        active: keyboard_info.active,
-    }).collect();
+    let response: Vec<ActiveKeyboardBackendResponse> = keyboards.values().map(describe_keyboard).collect();
     drop(state); // For optimisation
     to_frontend_update_keyboard_devices(response, &app_handle);
     return_back_handle(app_handle);
@@ -528,11 +523,7 @@ async fn refresh_mouses() -> Result<(), ()> {
     };
     let mouses = &mut state.mouses_info_map;
 
-    let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(|mouse_info| ActiveMouseBackendResponse {
-        name: mouse_info.mouse.device_name.to_string(),
-        id: mouse_info.mouse.device_path.to_string(),
-        active: mouse_info.active,
-    }).collect();
+    let response: Vec<ActiveMouseBackendResponse> = mouses.values().map(describe_mouse).collect();
     drop(state); // For optimisation
     to_frontend_update_mouse_devices(response, &app_handle);
     return_back_handle(app_handle);

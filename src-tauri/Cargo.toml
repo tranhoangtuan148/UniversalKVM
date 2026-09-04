@@ -27,7 +27,7 @@ tokio = { version = "1.41.1", features = ["full"] }
 
 # Forked from xavkeyboardandmousegrabber 0.1.0 by XavierF-C, to carry the device layer
 # changes a software KVM needs. See the fork's CHANGELOG for what differs.
-universalkvm-input = { git = "https://github.com/tranhoangtuan148/universalkvm-input", rev = "ef925c795851fb1d0215589b400427f000a67e5c", features = ["serde"] }
+universalkvm-input = { git = "https://github.com/tranhoangtuan148/universalkvm-input", rev = "27e1eff48ad95bbce3a8526e864e46ca0fc8b9fe", features = ["serde"] }
 libp2p = { version = "0.56", features = ["tokio", "cbor", "identify", "macros", "mdns", "noise", "ping", "quic", "request-response", "tcp", "yamux"] }
 libp2p-stream = { version = "0.4.0-alpha" }
 gethostname = "1.1.0"
