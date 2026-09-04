@@ -1,7 +1,7 @@
 use crate::{PREVENT_TAURI_CRASH, get_handle, return_back_handle};
-use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_borders, to_frontend_update_mouse_devices};
+use crate::common::{backend_add_log, monotonic_ms, log_lock_error, log_lock_error_void, to_frontend_update_borders, to_frontend_update_mouse_devices};
 use crate::device_names::{DeviceKind, friendly_device_name};
-use crate::focus::send_focus_with_border;
+use crate::focus::{focused_peer_id, send_focus_with_border};
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveMouseBackendResponse, AppSetOfMonitors, BackendGlobalState, Border, BorderPair, BorderPortal, BordersResponse, LogLevel, Monitor, MouseEventRequestContent, MouseInfo, NetworkAction, NetworkApplicationRequest, NetworkInfo, RememberedDevice, SetOfMonitors};
 use crate::storage::save_config;
@@ -207,13 +207,7 @@ pub fn fetch_mouse_events(app_handle: &AppHandle) {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when fetching mouse events: {err}"), app_handle); return; }, // Early return
     };
-    let peer = state.network_info.discovered_apps.iter().find(|(_key, app)|
-        app.info.authorized_by_self && app.info.authorized_by_peer
-        && state.network_info.self_info.focused_id == app.info.id);
-    let focused_peer_id = match peer {
-        Some(app) => app.1.info.id.clone(),
-        None => "".to_string(),
-    };
+    let focused_peer_id = focused_peer_id(&state.network_info);
 
     let mouses = &mut (state.mouses_info_map);
 
@@ -319,8 +313,9 @@ pub fn execute_mouse_events(app_handle: &AppHandle) {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when executing mouse events: {err}"), app_handle); return; }, // Early return
     };
-    let mouses_events = state.received_mouses_events_queue.clone();
-    state.received_mouses_events_queue.clear();
+    // Taking the queue hands over its buffer and leaves an empty one behind, so the events
+    // are not copied. They carry the peer's serialized payload, which is worth not copying.
+    let mouses_events = std::mem::take(&mut state.received_mouses_events_queue);
     drop(state); // Necessary to prevent a deadlock
 
     let has_events = !mouses_events.is_empty();
@@ -456,6 +451,10 @@ pub fn send_events_to_mouse(events: Vec<mouse_events::MouseEvent>, mut mouse_pro
   the check pushes it away.
 */
 static IS_CHECKING_BORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Reads `monotonic_ms`, never the wall clock: a clock that can step backward would read as
+/// no time passing and hold off every further check, which would end crossings altogether.
+/// Starting at zero costs at most one check in the first few milliseconds of the process,
+/// when no peer is connected yet and there is nothing to cross to.
 static LAST_BORDER_CHECK_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 const BORDER_CHECK_INTERVAL_MS: u64 = 10;
 
@@ -467,15 +466,10 @@ impl Drop for BorderCheckGate {
     }
 }
 
-fn now_ms() -> u64 {
-    let since_the_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    since_the_epoch.as_millis() as u64
-}
+
 
 pub fn send_focus_if_cursor_is_on_valid_border() {
-    let now = now_ms();
+    let now = monotonic_ms();
     if now.saturating_sub(LAST_BORDER_CHECK_MS.load(std::sync::atomic::Ordering::SeqCst)) < BORDER_CHECK_INTERVAL_MS {
         return; // Early return, the cursor was where it is a moment ago
     }
@@ -827,8 +821,7 @@ pub fn is_cursor_on_global_border(cursor: xavkeyboardandmousegrabber::MouseMovem
         }
     }
 
-    let monitor_borders = Monitor::get_monitor_borders(self_id, monitor_index, borders);
-    for monitor_border in &monitor_borders {
+    for monitor_border in Monitor::get_monitor_borders(self_id, monitor_index, borders) {
         let mut self_border = &monitor_border.pair[0];
         let mut other_border = &monitor_border.pair[1];
         if self_border.app_id != self_id {
@@ -932,7 +925,6 @@ pub fn repulse_cursor_from_border(cursor: xavkeyboardandmousegrabber::MouseMovem
     }
 
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

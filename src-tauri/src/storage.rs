@@ -397,9 +397,12 @@ pub async fn transfer_files(drag: DragBackendResponse) {
             files_to_be_completed: vec!(),
         };
 
+        // The paths asked for are read once per file, so they are split once.
+        let all_parts = split_paths(&all_paths);
+
         // For now, using a sequential file transfer
         for file in &files {
-            let destination_path = get_shortest_relative_path(file, &all_paths);
+            let destination_path = get_shortest_relative_path_split(file, &all_parts);
             let success = transfer_file(
                 file.clone(),
                 destination_path,
@@ -660,21 +663,33 @@ pub fn send_file_chunks_and_wait_for_confirmations(
 /// path='user/Downloads/file' and all_paths=['user/Downloads/file', 'user/Downloads/subFolder/otherFile']
 ///
 /// The resulting path will be using forward slashes (/).
-pub fn get_shortest_relative_path(path: &str, all_paths: &Vec<String>) -> String {
+/// Splits the paths a transfer was asked for into their parts, once.
+///
+/// `get_shortest_relative_path` is asked for every file of the transfer, and it reads these
+/// same paths each time. A dropped folder can expand to thousands of files, so splitting the
+/// paths per file meant thousands of throwaway allocations for an answer that never changes.
+pub fn split_paths(all_paths: &[String]) -> Vec<Vec<&str>> {
+    all_paths.iter().map(|path| split_path(path)).collect()
+}
+
+fn split_path(path: &str) -> Vec<&str> {
     // Ignore trailing separator
-    let trimmed_path = path
-        .trim_start_matches(std::path::MAIN_SEPARATOR_STR)
-        .trim_end_matches(std::path::MAIN_SEPARATOR_STR);
-    let parts: Vec<&str> = trimmed_path.split(std::path::MAIN_SEPARATOR_STR).collect();
+    path.trim_start_matches(std::path::MAIN_SEPARATOR_STR)
+        .trim_end_matches(std::path::MAIN_SEPARATOR_STR)
+        .split(std::path::MAIN_SEPARATOR_STR)
+        .collect()
+}
+
+pub fn get_shortest_relative_path(path: &str, all_paths: &Vec<String>) -> String {
+    get_shortest_relative_path_split(path, &split_paths(all_paths))
+}
+
+/// The same answer as `get_shortest_relative_path`, from paths that are already split.
+pub fn get_shortest_relative_path_split(path: &str, all_parts: &[Vec<&str>]) -> String {
+    let parts: Vec<&str> = split_path(path);
 
     let mut last_common_index: isize = parts.len() as isize - 1;
-    for other_path in all_paths {
-        // Ignore trailing separator
-        let trimmed_path = other_path
-            .trim_start_matches(std::path::MAIN_SEPARATOR_STR)
-            .trim_end_matches(std::path::MAIN_SEPARATOR_STR);
-        let other_parts: Vec<&str> = trimmed_path.split(std::path::MAIN_SEPARATOR_STR).collect();
-
+    for other_parts in all_parts {
         for i in (0..(last_common_index + 1) as usize).rev() {
             if i + 2 > other_parts.len() {
                 last_common_index = other_parts.len() as isize - 2;

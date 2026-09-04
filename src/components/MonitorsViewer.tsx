@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { TrashIcon } from "@radix-ui/react-icons";
 import "./Warn.css";
 import { AppMonitors, BorderPair, MonitorBorder, Monitor } from "../interfaces/global";
@@ -34,12 +34,17 @@ interface Props {
 const MonitorsViewer: React.FC<Props> = (props) => {
   const { appsMonitors, borders, focusedId, isEditMode, svgMinX, svgMinY, svgWidth, svgHeight } = props;
 
-  const maxMonitorWidth = Math.max(...appsMonitors.map((appMonitors) =>
+  /*
+    Both are read all over the render to scale lines and text, and both walk every monitor
+    of every app. The cursor moving re-renders this component, and the monitors do not
+    change when it does, so the walk is kept until they actually change.
+  */
+  const maxMonitorWidth = useMemo(() => Math.max(...appsMonitors.map((appMonitors) =>
     appMonitors.monitors.reduce((maximum, monitor) => Math.max(monitor.width, maximum), 1)
-  ));
-  const maxMonitorHeight = Math.max(...appsMonitors.map((appMonitors) =>
+  )), [appsMonitors]);
+  const maxMonitorHeight = useMemo(() => Math.max(...appsMonitors.map((appMonitors) =>
     appMonitors.monitors.reduce((maximum, monitor) => Math.max(monitor.height, maximum), 1)
-  ));
+  )), [appsMonitors]);
 
   const editedAppsMonitors = appsMonitors;
 
@@ -258,8 +263,9 @@ const MonitorsViewer: React.FC<Props> = (props) => {
   }
 
   // Cursor translated into svg coordinates
-  const [svgCursorX, setSvgCursorX] = useState<number>(0);
-  const [svgCursorY, setSvgCursorY] = useState<number>(0);
+  const [svgCursor, setSvgCursor] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
+  const svgCursorX = svgCursor.x;
+  const svgCursorY = svgCursor.y;
 
   function isOverlapping(start1: number, end1: number, start2: number, end2: number): boolean {
     return (start1 <= start2 && start2 <= end1)
@@ -551,15 +557,16 @@ const MonitorsViewer: React.FC<Props> = (props) => {
         style={{ lineHeight: 0 }}
         id="svg-monitors-area"
         onMouseMove={(event) => {
-          const container = document.getElementById("svg-monitors-area");
-          const bounds = container?.getBoundingClientRect();
-          let relX = (event?.clientX ?? 0) - (bounds?.left ?? 0);
-          let relY = (event?.clientY ?? 0) - (bounds?.top ?? 0);
+          // currentTarget is the div this handler is on, so the element is already in hand.
+          // Looking it up by id again would be a DOM query per mouse move.
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const relX = event.clientX - bounds.left;
+          const relY = event.clientY - bounds.top;
 
-          let svgX = svgMinX + relX * svgWidth / (bounds?.width ?? svgWidth);
-          let svgY = svgMinY + relY * svgHeight / (bounds?.height ?? svgHeight);
-          setSvgCursorX(svgX);
-          setSvgCursorY(svgY);
+          setSvgCursor({
+            x: svgMinX + relX * svgWidth / (bounds.width || svgWidth),
+            y: svgMinY + relY * svgHeight / (bounds.height || svgHeight),
+          });
         }}
       >
         <svg

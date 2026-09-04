@@ -1,5 +1,6 @@
 use crate::common::{backend_add_log, log_lock_error, log_lock_error_void, to_frontend_update_keyboard_devices};
 use crate::device_names::{DeviceKind, friendly_device_name};
+use crate::focus::focused_peer_id;
 use crate::networking::{submit_network_request};
 use crate::states::{ActiveKeyboardBackendResponse, BackendGlobalState, KeyboardEventRequestContent, KeyboardInfo, LogLevel, NetworkAction, NetworkApplicationRequest, RememberedDevice};
 use crate::storage::save_config;
@@ -162,14 +163,7 @@ pub fn fetch_keyboard_events(app_handle: &AppHandle) {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when fetching keyboard events: {err}"), app_handle); return; }, // Early return
     };
-    let peer = state.network_info.discovered_apps.iter().find(|(_key, app)|
-        app.info.authorized_by_self && app.info.authorized_by_peer
-        && state.network_info.self_info.focused_id == app.info.id
-    );
-    let focused_peer_id = match peer {
-        Some(app) => app.1.info.id.clone(),
-        None => "".to_string(),
-    };
+    let focused_peer_id = focused_peer_id(&state.network_info);
 
     let keyboards = &mut state.keyboards_info_map;
 
@@ -255,8 +249,9 @@ pub fn execute_keyboard_events(app_handle: &AppHandle) {
         Ok(state) => state,
         Err(err) => { log_lock_error_void(format!("Lock error when fetching keyboard events: {err}"), app_handle); return; }, // Early return
     };
-    let keyboards_events: std::collections::VecDeque<KeyboardEventRequestContent> = state.received_keyboards_events_queue.clone();
-    state.received_keyboards_events_queue.clear();
+    // Taking the queue hands over its buffer and leaves an empty one behind, so the events
+    // are not copied. They carry the peer's serialized payload, which is worth not copying.
+    let keyboards_events = std::mem::take(&mut state.received_keyboards_events_queue);
     drop(state); // Necessary to prevent a deadlock
 
     for keyboard_event in keyboards_events {

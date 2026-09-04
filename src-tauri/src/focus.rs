@@ -6,6 +6,18 @@ use crate::mouses::{get_all_apps_monitors};
 use crate::states::{AppResponse, BorderPortal, FocusEventRequestContent, NetworkAction, NetworkApplicationRequest, NetworkInfo, SetOfMonitorsEventRequestContent};
 
 
+/// The peer the cursor is currently on, or an empty string when it is on this machine.
+///
+/// `discovered_apps` is keyed on the very id being looked for, so the answer is one hash
+/// lookup. The input loops ask for it on every pass, which is why it does not scan.
+pub fn focused_peer_id(network_info: &NetworkInfo) -> String {
+    let focused_id = &network_info.self_info.focused_id;
+    match network_info.discovered_apps.get(focused_id) {
+        Some(app) if app.info.authorized_by_self && app.info.authorized_by_peer => focused_id.clone(),
+        _ => String::new(),
+    }
+}
+
 pub fn send_focus_with_position(focused_id: String, position: MouseMovement, network_info: &mut NetworkInfo, app_handle: &AppHandle) {
     network_info.self_info.focused_id = focused_id.clone();
     broadcast_focus(focused_id.clone(), Some(position), None, network_info);

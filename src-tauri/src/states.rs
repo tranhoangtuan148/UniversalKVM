@@ -267,17 +267,18 @@ impl Monitor {
         id
     }
 
-    pub fn get_monitor_borders(app_id: &str, monitor_index: u8, borders: &[BorderPair]) -> Vec<BorderPair> {
-        let mut monitor_borders = vec!();
-        for border in borders {
-            if border.is_related(app_id) &&
-                let Some(monitor_border) = border.pair.iter().find(|border| border.app_id == app_id)
-                && monitor_border.monitor_index == monitor_index
-            {
-                monitor_borders.push(border.clone());
-            }
-        }
-        monitor_borders
+    /// The borders drawn on one monitor of one app.
+    ///
+    /// Borrows rather than collecting: the cursor check asks for these on every pass, and
+    /// only ever reads them, so there is nothing for a Vec of clones to earn.
+    pub fn get_monitor_borders<'a>(app_id: &'a str, monitor_index: u8, borders: &'a [BorderPair])
+        -> impl Iterator<Item = &'a BorderPair> + 'a {
+        borders.iter().filter(move |border| {
+            border.is_related(app_id)
+                && border.pair.iter()
+                    .find(|border| border.app_id == app_id)
+                    .is_some_and(|monitor_border| monitor_border.monitor_index == monitor_index)
+        })
     }
 }
 

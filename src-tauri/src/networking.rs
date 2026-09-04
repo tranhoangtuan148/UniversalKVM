@@ -180,8 +180,13 @@ pub fn execute_received_network_requests(app_handle: &AppHandle) {
         None
     }).collect();
 
-    // Cloning keys to easily move ownership of network_info
-    let apps_keys: Vec<String> = state.network_info.discovered_apps.keys().cloned().collect();
+    // Cloning keys to easily move ownership of network_info. Only a peer with something
+    // waiting is worth a key: this runs on every batch received, and the peer that sent the
+    // batch is usually the only one with anything to execute.
+    let apps_keys: Vec<String> = state.network_info.discovered_apps.iter()
+        .filter(|(_id, app)| !app.received_requests_queue.is_empty())
+        .map(|(id, _app)| id.clone())
+        .collect();
     for app_destination_id in apps_keys {
         while let Some(request) = get_next_network_request(&app_destination_id, &mut state.network_info) {
             let AppDestinationInfo {
